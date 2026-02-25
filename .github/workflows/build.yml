@@ -94,10 +94,7 @@ jobs:
       - name: Build
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --name install-windows ^
-            --add-data "src;src" ^
-            --add-data "default.project.json;." ^
-            install.py
+          pyinstaller --onefile --name install-windows --add-data "src;src" --add-data "default.project.json;." install.py
       - uses: actions/upload-artifact@v4
         with:
           name: installer-windows
