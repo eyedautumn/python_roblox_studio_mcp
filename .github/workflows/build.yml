@@ -42,17 +42,26 @@ jobs:
 
   # ── Build standalone install executables ────────────────────────────────
   build-installer-linux:
+    needs: build-plugin
     name: Build installer (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin
+          path: .
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Build
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --name install-linux install.py
+          pyinstaller --onefile --name install-linux \
+            --add-data "src:src" \
+            --add-data "default.project.json:." \
+            --add-data "RobloxMcpBridge.rbxm:." \
+            install.py
       - uses: actions/upload-artifact@v4
         with:
           name: installer-linux
@@ -60,17 +69,26 @@ jobs:
           retention-days: 7
 
   build-installer-macos:
+    needs: build-plugin
     name: Build installer (macOS)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin
+          path: .
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Build
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --name install-macos install.py
+          pyinstaller --onefile --name install-macos \
+            --add-data "src:src" \
+            --add-data "default.project.json:." \
+            --add-data "RobloxMcpBridge.rbxm:." \
+            install.py
       - uses: actions/upload-artifact@v4
         with:
           name: installer-macos
@@ -78,17 +96,22 @@ jobs:
           retention-days: 7
 
   build-installer-windows:
+    needs: build-plugin
     name: Build installer (Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin
+          path: .
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Build
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --name install-windows install.py
+          pyinstaller --onefile --name install-windows --add-data "src;src" --add-data "default.project.json;." --add-data "RobloxMcpBridge.rbxm;." install.py
       - uses: actions/upload-artifact@v4
         with:
           name: installer-windows
