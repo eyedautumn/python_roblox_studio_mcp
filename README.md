@@ -58,7 +58,7 @@ If you already have the plugin installed, add this to your AI client's config:
 ```json
 {
   "mcpServers": {
-    "roblox-studio-mcp": {
+    "Roblox_Studio": {
       "command": "python3",
       "args": ["/path/to/roblox_mcp_server.py"]
     }
@@ -67,7 +67,7 @@ If you already have the plugin installed, add this to your AI client's config:
 ```
 
 - **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
-- **Claude Code:** `claude mcp add roblox-studio-mcp --scope user -- python3 /path/to/roblox_mcp_server.py`
+- **Claude Code:** `claude mcp add Roblox_Studio --scope user -- python3 /path/to/roblox_mcp_server.py`
 - **OpenAI Codex:** `~/.codex/config.toml`
 
 ## Building locally (Rojo)
