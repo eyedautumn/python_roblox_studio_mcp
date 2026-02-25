@@ -19,14 +19,16 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
-import tomllib  # stdlib Python 3.11+; gracefully falls back below
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 # ---------------------------------------------------------------------------
 # Compatibility shim for tomllib on Python < 3.11
 # ---------------------------------------------------------------------------
 try:
-    import tomllib  # noqa: F811
+    import tomllib
 except ImportError:
     try:
         import tomli as tomllib  # pip install tomli
@@ -39,10 +41,13 @@ except ImportError:
     tomli_w = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_SRC   = os.path.join(HERE, "src", "skill")
-SERVER_SRC  = os.path.join(HERE, "src", "server", "roblox_mcp_server.py")
-PLUGIN_RBXM = os.path.join(HERE, "RobloxMcpBridge.rbxm")   # built by CI
-PLUGIN_LUA  = os.path.join(HERE, "src", "plugin", "init.plugin.luau")  # fallback
+BUNDLE_ROOT = getattr(sys, "_MEIPASS", HERE)
+SKILL_SRC = os.path.join(BUNDLE_ROOT, "src", "skill")
+SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_mcp_server.py")
+PROJECT_JSON = os.path.join(BUNDLE_ROOT, "default.project.json")
+PLUGIN_RBXM = os.path.join(BUNDLE_ROOT, "RobloxMcpBridge.rbxm")
+PLUGIN_LUA = os.path.join(BUNDLE_ROOT, "src", "plugin", "init.plugin.luau")
+DEFAULT_GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "eyedautumn/python_roblox_studio_mcp")
 
 BRIGHT  = "\033[1m"
 GREEN   = "\033[32m"
@@ -100,7 +105,7 @@ def is_wsl():
         return False
 
 def windows_path_from_wsl(wsl_path):
-    """Convert a WSL path like /mnt/c/... to C:\..."""
+    r"""Convert a WSL path like /mnt/c/... to C:\..."""
     m = re.match(r"^/mnt/([a-z])(/.*)$", wsl_path)
     if m:
         return m.group(1).upper() + ":" + m.group(2).replace("/", "\\")
@@ -190,26 +195,193 @@ def install_skill(dest):
     return True
 
 
+
+
+def download_release_plugin_rbxm(repo_slug=None):
+    """Download RobloxMcpBridge.rbxm from latest GitHub release as a fallback."""
+    repo = repo_slug or os.environ.get("ROBLOX_MCP_REPO", DEFAULT_GITHUB_REPO)
+    api_url = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urlrequest.Request(api_url, headers={"Accept": "application/vnd.github+json", "User-Agent": "roblox-mcp-installer"})
+
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            release = json.loads(resp.read().decode("utf-8"))
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        warn(f"Could not query latest GitHub release for plugin .rbxm ({repo}).")
+        info(str(exc))
+        return None
+
+    assets = release.get("assets") or []
+    asset = next((a for a in assets if a.get("name") == "RobloxMcpBridge.rbxm"), None)
+    if not asset:
+        warn("Latest GitHub release does not include RobloxMcpBridge.rbxm.")
+        return None
+
+    download_url = asset.get("browser_download_url")
+    if not download_url:
+        warn("Release asset found, but download URL is missing.")
+        return None
+
+    fd, temp_path = tempfile.mkstemp(prefix="RobloxMcpBridge-", suffix=".rbxm")
+    os.close(fd)
+
+    try:
+        req = urlrequest.Request(download_url, headers={"User-Agent": "roblox-mcp-installer"})
+        with urlrequest.urlopen(req, timeout=30) as resp, open(temp_path, "wb") as out:
+            shutil.copyfileobj(resp, out)
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        warn("Failed downloading RobloxMcpBridge.rbxm from GitHub release.")
+        info(str(exc))
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        return None
+
+    info(f"Downloaded release plugin .rbxm from {repo}.")
+    return temp_path
+
+
+
+def _get_latest_release_tag(repo_slug):
+    api_url = f"https://api.github.com/repos/{repo_slug}/releases/latest"
+    req = urlrequest.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "roblox-mcp-installer",
+        },
+    )
+    with urlrequest.urlopen(req, timeout=15) as resp:
+        release = json.loads(resp.read().decode("utf-8"))
+    tag = release.get("tag_name")
+    if not tag:
+        raise RuntimeError("latest release tag_name missing")
+    return tag
+
+
+def download_server_script(repo_slug=None):
+    """Download roblox_mcp_server.py from latest release tag as a fallback."""
+    repo = repo_slug or os.environ.get("ROBLOX_MCP_REPO", DEFAULT_GITHUB_REPO)
+
+    try:
+        tag = _get_latest_release_tag(repo)
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+        warn(f"Could not resolve latest release tag for MCP server script ({repo}).")
+        info(str(exc))
+        return None
+
+    raw_url = (
+        f"https://raw.githubusercontent.com/{repo}/{tag}/"
+        "src/server/roblox_mcp_server.py"
+    )
+
+    fd, temp_path = tempfile.mkstemp(prefix="roblox-mcp-server-", suffix=".py")
+    os.close(fd)
+
+    try:
+        req = urlrequest.Request(raw_url, headers={"User-Agent": "roblox-mcp-installer"})
+        with urlrequest.urlopen(req, timeout=30) as resp, open(temp_path, "wb") as out:
+            shutil.copyfileobj(resp, out)
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        warn("Failed downloading roblox_mcp_server.py fallback from GitHub.")
+        info(str(exc))
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        return None
+
+    info(f"Downloaded MCP server script from {repo}@{tag}.")
+    return temp_path
+
+
+def resolve_server_script_path(preferred_path=None, primary_candidate=None):
+    """Resolve and optionally materialize the MCP server script path."""
+    preferred = os.path.abspath(os.path.expanduser(preferred_path)) if preferred_path else None
+
+    existing_source = None
+    candidates = []
+    if primary_candidate:
+        candidates.append(os.path.abspath(os.path.expanduser(primary_candidate)))
+    candidates.append(os.path.abspath(SERVER_SRC))
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            existing_source = candidate
+            break
+
+    if preferred and os.path.isfile(preferred):
+        info(f"Using MCP server script path from --server-script: {preferred}")
+        return preferred
+
+    if preferred:
+        if existing_source:
+            os.makedirs(os.path.dirname(preferred), exist_ok=True)
+            shutil.copy2(existing_source, preferred)
+            info(f"Copied MCP server script to requested path: {preferred}")
+            return preferred
+
+        downloaded = download_server_script()
+        if downloaded:
+            os.makedirs(os.path.dirname(preferred), exist_ok=True)
+            shutil.copy2(downloaded, preferred)
+            if downloaded.startswith(tempfile.gettempdir() + os.sep):
+                try:
+                    os.remove(downloaded)
+                except OSError:
+                    pass
+            info(f"Downloaded MCP server script to requested path: {preferred}")
+            return preferred
+        return preferred
+
+    if existing_source:
+        return existing_source
+
+    return download_server_script()
+
 # ---------------------------------------------------------------------------
 # Plugin installation
 # ---------------------------------------------------------------------------
 def install_plugin(plugin_dir):
     os.makedirs(plugin_dir, exist_ok=True)
 
-    # Prefer pre-built .rbxm (from CI), fall back to raw .luau
+    src = None
+    dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
+
+    # Prefer pre-built .rbxm (bundled/release), then build locally, then download release asset.
     if os.path.isfile(PLUGIN_RBXM):
-        src  = PLUGIN_RBXM
-        dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
-    elif os.path.isfile(PLUGIN_LUA):
-        src  = PLUGIN_LUA
+        src = PLUGIN_RBXM
+    elif shutil.which("rojo") and os.path.isfile(PROJECT_JSON):
+        temp_output = os.path.join(tempfile.gettempdir(), "RobloxMcpBridge.rbxm")
+        cmd = ["rojo", "build", PROJECT_JSON, "--output", temp_output]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and os.path.isfile(temp_output):
+            src = temp_output
+            info("Built RobloxMcpBridge.rbxm locally with rojo.")
+        else:
+            warn("Could not build .rbxm with rojo.")
+            if result.stderr:
+                info(result.stderr.strip())
+
+    if not src:
+        src = download_release_plugin_rbxm()
+
+    if not src and os.path.isfile(PLUGIN_LUA):
+        src = PLUGIN_LUA
         dest = os.path.join(plugin_dir, "RobloxMcpBridge.plugin.lua")
-        warn("Pre-built .rbxm not found — copying raw .luau. "
-             "Build it with 'rojo build default.project.json' for best results.")
-    else:
-        err("Cannot find plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
+        warn("No .rbxm available from bundle, local build, or release download — copying raw .luau plugin.")
+
+    if not src:
+        err("Cannot find or create plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
         return False
 
     shutil.copy2(src, dest)
+    if src.startswith(tempfile.gettempdir() + os.sep) and src.endswith(".rbxm") and src != PLUGIN_RBXM:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
     ok(f"Plugin installed → {dest}")
     return True
 
@@ -218,17 +390,23 @@ def install_plugin(plugin_dir):
 # MCP server registration helpers
 # ---------------------------------------------------------------------------
 def python_cmd():
-    """Return the best available python executable."""
+    """Return the best available python executable path for this OS."""
+    if sys.executable:
+        return os.path.abspath(sys.executable)
     for cmd in ("python3", "python"):
-        if shutil.which(cmd):
-            return cmd
+        path = shutil.which(cmd)
+        if path:
+            return path
     return "python3"
 
 def mcp_server_cmd(server_script_path):
     return [python_cmd(), server_script_path]
 
 # ── Claude Desktop ──────────────────────────────────────────────────────────
-def claude_desktop_config_path():
+def claude_desktop_config_path(custom_path=None):
+    if custom_path:
+        return os.path.abspath(os.path.expanduser(custom_path))
+
     plat = detect_platform()
     home = os.path.expanduser("~")
     if plat == "macos":
@@ -241,8 +419,8 @@ def claude_desktop_config_path():
     xdg = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
     return os.path.join(xdg, "Claude", "claude_desktop_config.json")
 
-def register_claude_desktop(server_script_path):
-    cfg_path = claude_desktop_config_path()
+def register_claude_desktop(server_script_path, config_path=None):
+    cfg_path = claude_desktop_config_path(config_path)
     os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
 
     cfg = {}
@@ -382,17 +560,23 @@ def main():
     parser.add_argument("--skip-skill",   action="store_true")
     parser.add_argument("--skip-plugin",  action="store_true")
     parser.add_argument("--skip-mcp",     action="store_true")
+    parser.add_argument("--server-script", default=None,
+                        help="Path to existing MCP server script to use, or where to place/download one")
     parser.add_argument("--agent",        choices=["claude-desktop", "claude-code",
                                                     "codex", "manual"],
                         default=None,
                         help="Which AI agent to register the MCP server with")
+    parser.add_argument("--claude-desktop-config", default=None,
+                        help="Optional path to Claude Desktop config JSON instead of OS default")
     args = parser.parse_args()
     interactive = not args.non_interactive
 
     print(c(BRIGHT, "\n  Roblox Studio MCP Bridge — Installation Wizard"))
     print(c(CYAN,   "  ------------------------------------------------"))
     info(f"Platform : {detect_platform()}" + (" (WSL)" if is_wsl() else ""))
-    info(f"Repo root: {HERE}")
+    info(f"Installer root: {HERE}")
+    if BUNDLE_ROOT != HERE:
+        info(f"Bundled assets root: {BUNDLE_ROOT}")
 
     # ── Step 1: Skill ────────────────────────────────────────────────────────
     header("Step 1 / 3 — Install skill folder")
@@ -467,11 +651,19 @@ def main():
     # ── Step 3: MCP server registration ─────────────────────────────────────
     header("Step 3 / 3 — Register MCP server with your AI agent")
     if not args.skip_mcp:
-        server_script = server_at_skill
-        if not os.path.isfile(server_script):
-            # Fall back to repo location
-            server_script = SERVER_SRC
-        if not os.path.isfile(server_script):
+        if interactive:
+            requested_server = ask(
+                "Optional MCP server script path (existing file or where installer should place it)",
+                args.server_script or "",
+            )
+            if requested_server == "":
+                requested_server = None
+        else:
+            requested_server = args.server_script
+
+        server_script = resolve_server_script_path(requested_server, server_at_skill)
+
+        if not server_script or not os.path.isfile(server_script):
             err(f"Cannot find server script at {server_script}. Skipping MCP registration.")
         else:
             server_script = os.path.abspath(server_script)
@@ -498,7 +690,15 @@ def main():
                     agent_id = args.agent
 
                 if agent_id == "claude-desktop":
-                    register_claude_desktop(server_script)
+                    custom_cfg_path = args.claude_desktop_config
+                    if interactive and not custom_cfg_path:
+                        custom_cfg_path = ask(
+                            "Optional Claude Desktop MCP config path (blank for default)",
+                            "",
+                        )
+                        if not custom_cfg_path:
+                            custom_cfg_path = None
+                    register_claude_desktop(server_script, custom_cfg_path)
                 elif agent_id == "claude-code":
                     register_claude_code(server_script)
                 elif agent_id == "codex":
