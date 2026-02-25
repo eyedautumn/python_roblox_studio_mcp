@@ -448,11 +448,11 @@ def register_claude_desktop(server_script_path, config_path=None):
 def register_claude_code(server_script_path):
     if not shutil.which("claude"):
         warn("'claude' CLI not found. Printing the command to run manually:")
-        info(f"  claude mcp add roblox-studio-mcp --scope user -- "
+        info(f"  claude mcp add Roblox_Studio --scope user -- "
              f"{python_cmd()} {server_script_path}")
         return
     cmd = [
-        "claude", "mcp", "add", "roblox-studio-mcp",
+        "claude", "mcp", "add", "Roblox_Studio",
         "--scope", "user", "--",
         python_cmd(), server_script_path,
     ]
@@ -471,7 +471,7 @@ def register_claude_code(server_script_path):
             ok("Registered with Claude Code via add-json.")
         else:
             err("Registration failed. Run manually:")
-            info(f"  claude mcp add roblox-studio-mcp --scope user -- "
+            info(f"  claude mcp add Roblox_Studio --scope user -- "
                  f"{python_cmd()} {server_script_path}")
 
 # ── OpenAI Codex ────────────────────────────────────────────────────────────
@@ -482,7 +482,7 @@ def codex_config_path():
 
 def register_codex(server_script_path):
     """
-    Add [mcp_servers.roblox-studio-mcp] to ~/.codex/config.toml.
+    Add [mcp_servers.Roblox_Studio] to ~/.codex/config.toml.
     We prefer 'codex mcp add' CLI but fall back to direct TOML editing.
     """
     if shutil.which("codex"):
@@ -506,13 +506,13 @@ def register_codex(server_script_path):
             existing_text = f.read()
 
     # Check for existing entry (avoid duplicates)
-    if "roblox-studio-mcp" in existing_text:
-        warn(f"'roblox-studio-mcp' already present in {cfg_path}. Skipping.")
+    if "Roblox_Studio" in existing_text:
+        warn(f"'Roblox_Studio' already present in {cfg_path}. Skipping.")
         return
 
     # Codex TOML format: [mcp_servers.<name>]  command = [...]
     entry = textwrap.dedent(f"""
-        [mcp_servers.roblox-studio-mcp]
+        [mcp_servers.Roblox_Studio]
         command = [{python_cmd()!r}, {server_script_path!r}]
     """).lstrip()
 
@@ -527,7 +527,7 @@ def register_codex(server_script_path):
 def print_manual_json(server_script_path):
     snippet = {
         "mcpServers": {
-            "roblox-studio-mcp": {
+            "Roblox_Studio": {
                 "command": python_cmd(),
                 "args": [server_script_path],
             }
@@ -549,7 +549,7 @@ def main():
             Examples:
               python install.py                          # interactive
               python install.py --non-interactive \\
-                  --skill-dest ~/.codex/skills/roblox-studio-mcp \\
+                  --skill-dest ~/.codex/skills/ \\
                   --plugin-dir /path/to/Plugins \\
                   --agent claude-code
         """),
@@ -591,7 +591,7 @@ def main():
 
         if do_skill:
             default_dest = os.path.join(
-                os.path.expanduser("~"), ".codex", "skills", "roblox-studio-mcp"
+                os.path.expanduser("~"), ".codex", "skills", "Roblox_Studio"
             )
             if interactive:
                 dest = ask("Destination", default_dest)
