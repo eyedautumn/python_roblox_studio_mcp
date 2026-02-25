@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch: 
 
 env:
   PLUGIN_VERSION: "0.1.${{ github.run_number }}"
