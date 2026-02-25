@@ -21,6 +21,8 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from urllib import error as urlerror
+from urllib import request as urlrequest
 import tomllib  # stdlib Python 3.11+; gracefully falls back below
 
 # ---------------------------------------------------------------------------
@@ -46,6 +48,7 @@ SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_mcp_server.py")
 PROJECT_JSON = os.path.join(BUNDLE_ROOT, "default.project.json")
 PLUGIN_RBXM = os.path.join(BUNDLE_ROOT, "RobloxMcpBridge.rbxm")
 PLUGIN_LUA = os.path.join(BUNDLE_ROOT, "src", "plugin", "init.plugin.luau")
+DEFAULT_GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "eyedautumn/python_roblox_studio_mcp")
 
 BRIGHT  = "\033[1m"
 GREEN   = "\033[32m"
@@ -193,37 +196,86 @@ def install_skill(dest):
     return True
 
 
+
+
+def download_release_plugin_rbxm(repo_slug=None):
+    """Download RobloxMcpBridge.rbxm from latest GitHub release as a fallback."""
+    repo = repo_slug or os.environ.get("ROBLOX_MCP_REPO", DEFAULT_GITHUB_REPO)
+    api_url = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urlrequest.Request(api_url, headers={"Accept": "application/vnd.github+json", "User-Agent": "roblox-mcp-installer"})
+
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            release = json.loads(resp.read().decode("utf-8"))
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        warn(f"Could not query latest GitHub release for plugin .rbxm ({repo}).")
+        info(str(exc))
+        return None
+
+    assets = release.get("assets") or []
+    asset = next((a for a in assets if a.get("name") == "RobloxMcpBridge.rbxm"), None)
+    if not asset:
+        warn("Latest GitHub release does not include RobloxMcpBridge.rbxm.")
+        return None
+
+    download_url = asset.get("browser_download_url")
+    if not download_url:
+        warn("Release asset found, but download URL is missing.")
+        return None
+
+    fd, temp_path = tempfile.mkstemp(prefix="RobloxMcpBridge-", suffix=".rbxm")
+    os.close(fd)
+
+    try:
+        req = urlrequest.Request(download_url, headers={"User-Agent": "roblox-mcp-installer"})
+        with urlrequest.urlopen(req, timeout=30) as resp, open(temp_path, "wb") as out:
+            shutil.copyfileobj(resp, out)
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        warn("Failed downloading RobloxMcpBridge.rbxm from GitHub release.")
+        info(str(exc))
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        return None
+
+    info(f"Downloaded release plugin .rbxm from {repo}.")
+    return temp_path
+
 # ---------------------------------------------------------------------------
 # Plugin installation
 # ---------------------------------------------------------------------------
 def install_plugin(plugin_dir):
     os.makedirs(plugin_dir, exist_ok=True)
 
-    # Prefer pre-built .rbxm (from CI), then build with rojo, then fall back to raw .luau
+    src = None
+    dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
+
+    # Prefer pre-built .rbxm (bundled/release), then build locally, then download release asset.
     if os.path.isfile(PLUGIN_RBXM):
-        src  = PLUGIN_RBXM
-        dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
+        src = PLUGIN_RBXM
     elif shutil.which("rojo") and os.path.isfile(PROJECT_JSON):
         temp_output = os.path.join(tempfile.gettempdir(), "RobloxMcpBridge.rbxm")
         cmd = ["rojo", "build", PROJECT_JSON, "--output", temp_output]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0 and os.path.isfile(temp_output):
             src = temp_output
-            dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
             info("Built RobloxMcpBridge.rbxm locally with rojo.")
         else:
-            warn("Could not build .rbxm with rojo; falling back to raw .luau plugin.")
+            warn("Could not build .rbxm with rojo.")
             if result.stderr:
                 info(result.stderr.strip())
-            src = PLUGIN_LUA if os.path.isfile(PLUGIN_LUA) else None
-            dest = os.path.join(plugin_dir, "RobloxMcpBridge.plugin.lua")
-    elif os.path.isfile(PLUGIN_LUA):
-        src  = PLUGIN_LUA
+
+    if not src:
+        src = download_release_plugin_rbxm()
+
+    if not src and os.path.isfile(PLUGIN_LUA):
+        src = PLUGIN_LUA
         dest = os.path.join(plugin_dir, "RobloxMcpBridge.plugin.lua")
-        warn("Pre-built .rbxm not found — copying raw .luau. "
-             "Build it with 'rojo build default.project.json' for best results.")
-    else:
-        err("Cannot find plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
+        warn("No .rbxm available from bundle, local build, or release download — copying raw .luau plugin.")
+
+    if not src:
+        err("Cannot find or create plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
         return False
 
     if not src:
@@ -231,6 +283,11 @@ def install_plugin(plugin_dir):
         return False
 
     shutil.copy2(src, dest)
+    if src.startswith(tempfile.gettempdir() + os.sep) and src.endswith(".rbxm") and src != PLUGIN_RBXM:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
     ok(f"Plugin installed → {dest}")
     return True
 
