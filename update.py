@@ -63,6 +63,11 @@ def main() -> int:
     )
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo slug, e.g. owner/repo")
     parser.add_argument(
+        "--server-script",
+        default=None,
+        help="Path to existing MCP server script to use, or where install.py should place it",
+    )
+    parser.add_argument(
         "installer_args",
         nargs=argparse.REMAINDER,
         help="Arguments passed through to install.py (prefix with --).",
@@ -89,6 +94,10 @@ def main() -> int:
         pass_through = list(args.installer_args or [])
         if pass_through and pass_through[0] == "--":
             pass_through = pass_through[1:]
+
+        if args.server_script and "--server-script" not in pass_through:
+            cmd.extend(["--server-script", args.server_script])
+
         cmd.extend(pass_through)
 
         _print("Launching latest installer wizard...\n")

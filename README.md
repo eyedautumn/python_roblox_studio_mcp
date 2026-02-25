@@ -13,6 +13,7 @@ A Roblox Studio plugin that bridges Studio to an external MCP (Model Context Pro
    - **macOS:** `install-macos` *(right-click → Open on first run to bypass Gatekeeper)*
    - **Windows:** `install-windows.exe`
 2. Run the installer — it will walk you through plugin placement and MCP server registration for Claude Desktop, Claude Code, or OpenAI Codex.
+   - Advanced: pass `--server-script /absolute/path/to/roblox_mcp_server.py` to force which server script path is used or created.
 3. Open Roblox Studio. The **Roblox MCP** toolbar button will appear.
 4. Enable **HTTP Requests** in *Game Settings → Security* (the plugin will attempt this automatically).
 5. Click **Start Bridge Polling** in the plugin widget.
@@ -26,11 +27,12 @@ Use this when you want to always pull the latest installer wizard before setup.
    - **Linux/macOS:** `python3 update.py`
    - **Windows:** `py update.py` (or `python update.py`)
 3. The updater fetches the latest `install.py` from the newest release and launches the full interactive installer so you can pick your preferred setup options.
+   - You can also set `--server-script /absolute/path/to/roblox_mcp_server.py` when running `update.py`.
 
 You can pass installer flags through the updater too:
 
 ```bash
-python3 update.py -- --non-interactive --skip-skill --agent codex
+python3 update.py --server-script /opt/roblox-mcp/roblox_mcp_server.py -- --non-interactive --skip-skill --agent codex
 ```
 
 ### Option C — Manual plugin install

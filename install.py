@@ -23,13 +23,12 @@ import tempfile
 import textwrap
 from urllib import error as urlerror
 from urllib import request as urlrequest
-import tomllib  # stdlib Python 3.11+; gracefully falls back below
 
 # ---------------------------------------------------------------------------
 # Compatibility shim for tomllib on Python < 3.11
 # ---------------------------------------------------------------------------
 try:
-    import tomllib  # noqa: F811
+    import tomllib
 except ImportError:
     try:
         import tomli as tomllib  # pip install tomli
@@ -296,6 +295,51 @@ def download_server_script(repo_slug=None):
     info(f"Downloaded MCP server script from {repo}@{tag}.")
     return temp_path
 
+
+def resolve_server_script_path(preferred_path=None, primary_candidate=None):
+    """Resolve and optionally materialize the MCP server script path."""
+    preferred = os.path.abspath(os.path.expanduser(preferred_path)) if preferred_path else None
+
+    existing_source = None
+    candidates = []
+    if primary_candidate:
+        candidates.append(os.path.abspath(os.path.expanduser(primary_candidate)))
+    candidates.append(os.path.abspath(SERVER_SRC))
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            existing_source = candidate
+            break
+
+    if preferred and os.path.isfile(preferred):
+        info(f"Using MCP server script path from --server-script: {preferred}")
+        return preferred
+
+    if preferred:
+        if existing_source:
+            os.makedirs(os.path.dirname(preferred), exist_ok=True)
+            shutil.copy2(existing_source, preferred)
+            info(f"Copied MCP server script to requested path: {preferred}")
+            return preferred
+
+        downloaded = download_server_script()
+        if downloaded:
+            os.makedirs(os.path.dirname(preferred), exist_ok=True)
+            shutil.copy2(downloaded, preferred)
+            if downloaded.startswith(tempfile.gettempdir() + os.sep):
+                try:
+                    os.remove(downloaded)
+                except OSError:
+                    pass
+            info(f"Downloaded MCP server script to requested path: {preferred}")
+            return preferred
+        return preferred
+
+    if existing_source:
+        return existing_source
+
+    return download_server_script()
+
 # ---------------------------------------------------------------------------
 # Plugin installation
 # ---------------------------------------------------------------------------
@@ -346,10 +390,13 @@ def install_plugin(plugin_dir):
 # MCP server registration helpers
 # ---------------------------------------------------------------------------
 def python_cmd():
-    """Return the best available python executable."""
+    """Return the best available python executable path for this OS."""
+    if sys.executable:
+        return os.path.abspath(sys.executable)
     for cmd in ("python3", "python"):
-        if shutil.which(cmd):
-            return cmd
+        path = shutil.which(cmd)
+        if path:
+            return path
     return "python3"
 
 def mcp_server_cmd(server_script_path):
@@ -510,6 +557,8 @@ def main():
     parser.add_argument("--skip-skill",   action="store_true")
     parser.add_argument("--skip-plugin",  action="store_true")
     parser.add_argument("--skip-mcp",     action="store_true")
+    parser.add_argument("--server-script", default=None,
+                        help="Path to existing MCP server script to use, or where to place/download one")
     parser.add_argument("--agent",        choices=["claude-desktop", "claude-code",
                                                     "codex", "manual"],
                         default=None,
@@ -597,15 +646,19 @@ def main():
     # ── Step 3: MCP server registration ─────────────────────────────────────
     header("Step 3 / 3 — Register MCP server with your AI agent")
     if not args.skip_mcp:
-        server_script = server_at_skill
-        if not os.path.isfile(server_script):
-            # Fall back to repo/bundle location.
-            server_script = SERVER_SRC
-        if not os.path.isfile(server_script):
-            downloaded_server = download_server_script()
-            if downloaded_server:
-                server_script = downloaded_server
-        if not os.path.isfile(server_script):
+        if interactive:
+            requested_server = ask(
+                "Optional MCP server script path (existing file or where installer should place it)",
+                args.server_script or "",
+            )
+            if requested_server == "":
+                requested_server = None
+        else:
+            requested_server = args.server_script
+
+        server_script = resolve_server_script_path(requested_server, server_at_skill)
+
+        if not server_script or not os.path.isfile(server_script):
             err(f"Cannot find server script at {server_script}. Skipping MCP registration.")
         else:
             server_script = os.path.abspath(server_script)
