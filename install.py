@@ -242,6 +242,60 @@ def download_release_plugin_rbxm(repo_slug=None):
     info(f"Downloaded release plugin .rbxm from {repo}.")
     return temp_path
 
+
+
+def _get_latest_release_tag(repo_slug):
+    api_url = f"https://api.github.com/repos/{repo_slug}/releases/latest"
+    req = urlrequest.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "roblox-mcp-installer",
+        },
+    )
+    with urlrequest.urlopen(req, timeout=15) as resp:
+        release = json.loads(resp.read().decode("utf-8"))
+    tag = release.get("tag_name")
+    if not tag:
+        raise RuntimeError("latest release tag_name missing")
+    return tag
+
+
+def download_server_script(repo_slug=None):
+    """Download roblox_mcp_server.py from latest release tag as a fallback."""
+    repo = repo_slug or os.environ.get("ROBLOX_MCP_REPO", DEFAULT_GITHUB_REPO)
+
+    try:
+        tag = _get_latest_release_tag(repo)
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+        warn(f"Could not resolve latest release tag for MCP server script ({repo}).")
+        info(str(exc))
+        return None
+
+    raw_url = (
+        f"https://raw.githubusercontent.com/{repo}/{tag}/"
+        "src/server/roblox_mcp_server.py"
+    )
+
+    fd, temp_path = tempfile.mkstemp(prefix="roblox-mcp-server-", suffix=".py")
+    os.close(fd)
+
+    try:
+        req = urlrequest.Request(raw_url, headers={"User-Agent": "roblox-mcp-installer"})
+        with urlrequest.urlopen(req, timeout=30) as resp, open(temp_path, "wb") as out:
+            shutil.copyfileobj(resp, out)
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        warn("Failed downloading roblox_mcp_server.py fallback from GitHub.")
+        info(str(exc))
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        return None
+
+    info(f"Downloaded MCP server script from {repo}@{tag}.")
+    return temp_path
+
 # ---------------------------------------------------------------------------
 # Plugin installation
 # ---------------------------------------------------------------------------
@@ -545,8 +599,12 @@ def main():
     if not args.skip_mcp:
         server_script = server_at_skill
         if not os.path.isfile(server_script):
-            # Fall back to repo location
+            # Fall back to repo/bundle location.
             server_script = SERVER_SRC
+        if not os.path.isfile(server_script):
+            downloaded_server = download_server_script()
+            if downloaded_server:
+                server_script = downloaded_server
         if not os.path.isfile(server_script):
             err(f"Cannot find server script at {server_script}. Skipping MCP registration.")
         else:
