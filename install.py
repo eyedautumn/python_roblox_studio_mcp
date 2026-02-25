@@ -167,9 +167,9 @@ def find_plugin_dirs_windows():
         os.path.join(local, "Roblox", "Plugins"),
     ] if os.path.isdir(p)]
 
-def find_plugin_dirs():
+def find_plugin_dirs(custom_path=None):
     if custom_path:
-        return os.path.abspath(os.path.expanduser(custom_path))
+        return [os.path.abspath(os.path.expanduser(custom_path))]
 
     plat = detect_platform()
     wsl = is_wsl()
