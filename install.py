@@ -48,7 +48,7 @@ SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_mcp_server.py")
 PROJECT_JSON = os.path.join(BUNDLE_ROOT, "default.project.json")
 PLUGIN_RBXM = os.path.join(BUNDLE_ROOT, "RobloxMcpBridge.rbxm")
 PLUGIN_LUA = os.path.join(BUNDLE_ROOT, "src", "plugin", "init.plugin.luau")
-DEFAULT_GITHUB_REPO = "eyedautumn/python_roblox_studio_mcp"
+DEFAULT_GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "eyedautumn/python_roblox_studio_mcp")
 
 BRIGHT  = "\033[1m"
 GREEN   = "\033[32m"
@@ -279,6 +279,11 @@ def install_plugin(plugin_dir):
         return False
 
     shutil.copy2(src, dest)
+    if src.startswith(tempfile.gettempdir() + os.sep) and src.endswith(".rbxm") and src != PLUGIN_RBXM:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
     ok(f"Plugin installed → {dest}")
     return True
 

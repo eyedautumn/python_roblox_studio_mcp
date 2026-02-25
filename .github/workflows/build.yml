@@ -109,6 +109,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Build
+        shell: pwsh
         run: |
           pip install pyinstaller
           pyinstaller --onefile --name install-windows --add-data "src;src" --add-data "default.project.json;." --add-data "RobloxMcpBridge.rbxm;." install.py
