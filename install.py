@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import tomllib  # stdlib Python 3.11+; gracefully falls back below
 
@@ -39,10 +40,12 @@ except ImportError:
     tomli_w = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_SRC   = os.path.join(HERE, "src", "skill")
-SERVER_SRC  = os.path.join(HERE, "src", "server", "roblox_mcp_server.py")
-PLUGIN_RBXM = os.path.join(HERE, "RobloxMcpBridge.rbxm")   # built by CI
-PLUGIN_LUA  = os.path.join(HERE, "src", "plugin", "init.plugin.luau")  # fallback
+BUNDLE_ROOT = getattr(sys, "_MEIPASS", HERE)
+SKILL_SRC = os.path.join(BUNDLE_ROOT, "src", "skill")
+SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_mcp_server.py")
+PROJECT_JSON = os.path.join(BUNDLE_ROOT, "default.project.json")
+PLUGIN_RBXM = os.path.join(BUNDLE_ROOT, "RobloxMcpBridge.rbxm")
+PLUGIN_LUA = os.path.join(BUNDLE_ROOT, "src", "plugin", "init.plugin.luau")
 
 BRIGHT  = "\033[1m"
 GREEN   = "\033[32m"
@@ -196,16 +199,34 @@ def install_skill(dest):
 def install_plugin(plugin_dir):
     os.makedirs(plugin_dir, exist_ok=True)
 
-    # Prefer pre-built .rbxm (from CI), fall back to raw .luau
+    # Prefer pre-built .rbxm (from CI), then build with rojo, then fall back to raw .luau
     if os.path.isfile(PLUGIN_RBXM):
         src  = PLUGIN_RBXM
         dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
+    elif shutil.which("rojo") and os.path.isfile(PROJECT_JSON):
+        temp_output = os.path.join(tempfile.gettempdir(), "RobloxMcpBridge.rbxm")
+        cmd = ["rojo", "build", PROJECT_JSON, "--output", temp_output]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and os.path.isfile(temp_output):
+            src = temp_output
+            dest = os.path.join(plugin_dir, "RobloxMcpBridge.rbxm")
+            info("Built RobloxMcpBridge.rbxm locally with rojo.")
+        else:
+            warn("Could not build .rbxm with rojo; falling back to raw .luau plugin.")
+            if result.stderr:
+                info(result.stderr.strip())
+            src = PLUGIN_LUA if os.path.isfile(PLUGIN_LUA) else None
+            dest = os.path.join(plugin_dir, "RobloxMcpBridge.plugin.lua")
     elif os.path.isfile(PLUGIN_LUA):
         src  = PLUGIN_LUA
         dest = os.path.join(plugin_dir, "RobloxMcpBridge.plugin.lua")
         warn("Pre-built .rbxm not found — copying raw .luau. "
              "Build it with 'rojo build default.project.json' for best results.")
     else:
+        err("Cannot find plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
+        return False
+
+    if not src:
         err("Cannot find plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
         return False
 
@@ -392,7 +413,9 @@ def main():
     print(c(BRIGHT, "\n  Roblox Studio MCP Bridge — Installation Wizard"))
     print(c(CYAN,   "  ------------------------------------------------"))
     info(f"Platform : {detect_platform()}" + (" (WSL)" if is_wsl() else ""))
-    info(f"Repo root: {HERE}")
+    info(f"Installer root: {HERE}")
+    if BUNDLE_ROOT != HERE:
+        info(f"Bundled assets root: {BUNDLE_ROOT}")
 
     # ── Step 1: Skill ────────────────────────────────────────────────────────
     header("Step 1 / 3 — Install skill folder")
