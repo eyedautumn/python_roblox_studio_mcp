@@ -106,7 +106,7 @@ def is_wsl():
         return False
 
 def windows_path_from_wsl(wsl_path):
-    """Convert a WSL path like /mnt/c/... to C:\..."""
+    r"""Convert a WSL path like /mnt/c/... to C:\..."""
     m = re.match(r"^/mnt/([a-z])(/.*)$", wsl_path)
     if m:
         return m.group(1).upper() + ":" + m.group(2).replace("/", "\\")
