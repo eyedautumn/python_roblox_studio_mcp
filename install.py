@@ -278,6 +278,10 @@ def install_plugin(plugin_dir):
         err("Cannot find or create plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
         return False
 
+    if not src:
+        err("Cannot find plugin file (RobloxMcpBridge.rbxm or init.plugin.luau).")
+        return False
+
     shutil.copy2(src, dest)
     if src.startswith(tempfile.gettempdir() + os.sep) and src.endswith(".rbxm") and src != PLUGIN_RBXM:
         try:
