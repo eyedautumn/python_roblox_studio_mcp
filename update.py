@@ -68,6 +68,11 @@ def main() -> int:
         help="Path to existing MCP server script to use, or where install.py should place it",
     )
     parser.add_argument(
+        "--claude-desktop-config",
+        default=None,
+        help="Optional Claude Desktop config JSON path forwarded to install.py",
+    )
+    parser.add_argument(
         "installer_args",
         nargs=argparse.REMAINDER,
         help="Arguments passed through to install.py (prefix with --).",
@@ -97,6 +102,8 @@ def main() -> int:
 
         if args.server_script and "--server-script" not in pass_through:
             cmd.extend(["--server-script", args.server_script])
+        if args.claude_desktop_config and "--claude-desktop-config" not in pass_through:
+            cmd.extend(["--claude-desktop-config", args.claude_desktop_config])
 
         cmd.extend(pass_through)
 

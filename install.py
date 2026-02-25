@@ -168,6 +168,9 @@ def find_plugin_dirs_windows():
     ] if os.path.isdir(p)]
 
 def find_plugin_dirs():
+    if custom_path:
+        return os.path.abspath(os.path.expanduser(custom_path))
+
     plat = detect_platform()
     wsl = is_wsl()
     found = []
@@ -403,7 +406,10 @@ def mcp_server_cmd(server_script_path):
     return [python_cmd(), server_script_path]
 
 # ── Claude Desktop ──────────────────────────────────────────────────────────
-def claude_desktop_config_path():
+def claude_desktop_config_path(custom_path=None):
+    if custom_path:
+        return os.path.abspath(os.path.expanduser(custom_path))
+
     plat = detect_platform()
     home = os.path.expanduser("~")
     if plat == "macos":
@@ -416,8 +422,8 @@ def claude_desktop_config_path():
     xdg = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
     return os.path.join(xdg, "Claude", "claude_desktop_config.json")
 
-def register_claude_desktop(server_script_path):
-    cfg_path = claude_desktop_config_path()
+def register_claude_desktop(server_script_path, config_path=None):
+    cfg_path = claude_desktop_config_path(config_path)
     os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
 
     cfg = {}
@@ -563,6 +569,8 @@ def main():
                                                     "codex", "manual"],
                         default=None,
                         help="Which AI agent to register the MCP server with")
+    parser.add_argument("--claude-desktop-config", default=None,
+                        help="Optional path to Claude Desktop config JSON instead of OS default")
     args = parser.parse_args()
     interactive = not args.non_interactive
 
@@ -685,7 +693,15 @@ def main():
                     agent_id = args.agent
 
                 if agent_id == "claude-desktop":
-                    register_claude_desktop(server_script)
+                    custom_cfg_path = args.claude_desktop_config
+                    if interactive and not custom_cfg_path:
+                        custom_cfg_path = ask(
+                            "Optional Claude Desktop MCP config path (blank for default)",
+                            "",
+                        )
+                        if not custom_cfg_path:
+                            custom_cfg_path = None
+                    register_claude_desktop(server_script, custom_cfg_path)
                 elif agent_id == "claude-code":
                     register_claude_code(server_script)
                 elif agent_id == "codex":
