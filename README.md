@@ -12,7 +12,7 @@ A Roblox Studio plugin that bridges Studio to an external MCP (Model Context Pro
    - **Linux:** `install-linux`
    - **macOS:** `install-macos` *(right-click → Open on first run to bypass Gatekeeper)*
    - **Windows:** `install-windows.exe`
-2. Run the installer — it will walk you through plugin placement and MCP server registration for Claude Desktop, Claude Code, or OpenAI Codex.
+2. Run the installer — it will walk you through plugin placement and MCP server registration for Claude Desktop, Claude Code, OpenAI Codex, or OpenCode.
    - Advanced: pass `--server-script /absolute/path/to/roblox_mcp_server.py` to force which server script path is used or created.
    - Claude Desktop advanced: pass `--claude-desktop-config /absolute/path/to/claude_desktop_config.json` to use a custom config location.
 3. Open Roblox Studio. The **Roblox MCP** toolbar button will appear.
@@ -69,6 +69,7 @@ If you already have the plugin installed, add this to your AI client's config:
 - **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 - **Claude Code:** `claude mcp add roblox-studio-mcp --scope user -- python3 /path/to/roblox_mcp_server.py`
 - **OpenAI Codex:** `~/.codex/config.toml`
+- **OpenCode:** `~/.config/opencode/mcp.json` (fallback when CLI registration is unavailable)
 
 ## Building locally (Rojo)
 
