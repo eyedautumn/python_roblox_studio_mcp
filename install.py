@@ -7,7 +7,7 @@ What this does (all steps are optional and can be skipped):
   1. Copy the skill folder to a destination of your choice
   2. Install the Studio plugin (auto-detects platform/Vinegar)
   3. Register the MCP server with your AI agent
-     (Claude Code, Claude Desktop, OpenAI Codex, or manual JSON)
+     (Claude Code, Claude Desktop, OpenAI Codex, OpenCode, or manual JSON)
 
 No git required. Works entirely from this repo directory.
 """
@@ -523,6 +523,51 @@ def register_codex(server_script_path):
     ok(f"OpenAI Codex config updated → {cfg_path}")
     info("Restart Codex to pick up the new server.")
 
+
+
+# ── OpenCode ─────────────────────────────────────────────────────────────────
+def opencode_config_path():
+    opencode_home = os.environ.get(
+        "OPENCODE_HOME",
+        os.path.join(os.path.expanduser("~"), ".config", "opencode"),
+    )
+    return os.path.join(opencode_home, "mcp.json")
+
+
+def register_opencode(server_script_path):
+    """Register server with OpenCode CLI, or update mcp.json as a fallback."""
+    if shutil.which("opencode"):
+        cmd = [
+            "opencode", "mcp", "add", "roblox-studio-mcp", "--",
+            python_cmd(), server_script_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            ok("Registered with OpenCode via CLI.")
+            return
+
+    cfg_path = opencode_config_path()
+    os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+
+    cfg = {}
+    if os.path.isfile(cfg_path):
+        with open(cfg_path) as f:
+            try:
+                cfg = json.load(f)
+            except json.JSONDecodeError:
+                warn(f"Could not parse existing OpenCode config at {cfg_path}; it will be rewritten.")
+
+    cfg.setdefault("mcpServers", {})
+    cfg["mcpServers"]["roblox-studio-mcp"] = {
+        "command": python_cmd(),
+        "args": [server_script_path],
+    }
+
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    ok(f"OpenCode config updated → {cfg_path}")
+    info("Restart OpenCode to pick up the new server.")
+
 # ── Generic JSON snippet ─────────────────────────────────────────────────────
 def print_manual_json(server_script_path):
     snippet = {
@@ -566,7 +611,7 @@ def main():
     parser.add_argument("--server-script", default=None,
                         help="Path to existing MCP server script to use, or where to place/download one")
     parser.add_argument("--agent",        choices=["claude-desktop", "claude-code",
-                                                    "codex", "manual"],
+                                                    "codex", "opencode", "manual"],
                         default=None,
                         help="Which AI agent to register the MCP server with")
     parser.add_argument("--claude-desktop-config", default=None,
@@ -616,7 +661,7 @@ def main():
             do_plugin = True
 
         if do_plugin:
-            auto_dirs = find_plugin_dirs()
+            auto_dirs = find_plugin_dirs(args.plugin_dir)
             if auto_dirs:
                 info("Auto-detected plugin directories:")
                 for i, d in enumerate(auto_dirs):
@@ -680,7 +725,8 @@ def main():
                     "1": ("claude-desktop", "Claude Desktop"),
                     "2": ("claude-code",    "Claude Code (CLI)"),
                     "3": ("codex",          "OpenAI Codex"),
-                    "4": ("manual",         "Show JSON snippet (manual setup)"),
+                    "4": ("opencode",      "OpenCode"),
+                    "5": ("manual",         "Show JSON snippet (manual setup)"),
                     "0": (None,             "Skip"),
                 }
                 if interactive:
@@ -706,6 +752,8 @@ def main():
                     register_claude_code(server_script)
                 elif agent_id == "codex":
                     register_codex(server_script)
+                elif agent_id == "opencode":
+                    register_opencode(server_script)
                 elif agent_id == "manual":
                     print_manual_json(server_script)
                 else:
