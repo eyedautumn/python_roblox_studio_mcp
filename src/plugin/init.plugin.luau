@@ -16,6 +16,7 @@ local StudioTools   = require(script.Parent.Tools.StudioTools)
 local TerrainTools   = require(script.Parent.Tools.TerrainTools)
 local BulkTools      = require(script.Parent.Tools.BulkTools)
 local DataModelTools = require(script.Parent.Tools.DataModelTools)
+local AnalyzeTools = require(script.Parent.Tools.AnalyzeTools)
 
 local BRIDGE_URL         = "http://127.0.0.1:28650"
 local CLIENT_ID          = "studio"
@@ -199,6 +200,7 @@ local handlers = {
 	get_workspace_info   = DataModelTools.get_workspace_info,
 	get_team_list        = DataModelTools.get_team_list,
 	get_lighting_effects = DataModelTools.get_lighting_effects,
+    analyze_script = AnalyzeTools.analyze_script
 }
 
 ---------------------------------------------------------------------------
