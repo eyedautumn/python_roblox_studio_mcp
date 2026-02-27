@@ -2,7 +2,10 @@
 """Roblox Studio MCP Bridge Auto-Updater Wizard.
 
 Downloads the latest installer script from GitHub releases and runs it,
-so users always get the newest setup wizard behavior.
+so users always get the newest setup wizard behaviour.
+
+All flags are forwarded to the downloaded install.py, including the new
+--server-path flag which controls where the MCP server script is placed.
 """
 
 from __future__ import annotations
@@ -59,25 +62,55 @@ def _resolve_install_script_url(repo: str, release: dict) -> tuple[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Download and run the latest Roblox MCP installer wizard."
+        description="Download and run the latest Roblox MCP installer wizard.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  # Fully interactive — always pulls the newest wizard first
+  python update.py
+
+  # Install server to a custom path, register with Claude Code non-interactively
+  python update.py \\
+      --server-path /opt/roblox-mcp/roblox_mcp_server.py \\
+      -- --non-interactive --agent claude-code
+
+  # Update only the server script, skip everything else
+  python update.py \\
+      --server-path ~/roblox-mcp/roblox_mcp_server.py \\
+      -- --non-interactive --skip-skill --skip-plugin --skip-mcp
+""",
     )
-    parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub repo slug, e.g. owner/repo")
+    parser.add_argument("--repo", default=DEFAULT_REPO,
+                        help="GitHub repo slug, e.g. owner/repo")
+
+    # ── Flags mirrored from install.py so they can be set at the update.py
+    #    level (no need to use the -- pass-through for the common cases).
     parser.add_argument(
-        "--server-script",
+        "--server-path",
         default=None,
-        help="Path to existing MCP server script to use, or where install.py should place it",
+        help=(
+            "Where to install / update roblox_mcp_server.py. "
+            "Forwarded to install.py as --server-path. "
+            "Defaults to a platform-appropriate location if omitted."
+        ),
     )
+    # Keep old name as a silent alias
+    parser.add_argument("--server-script", default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--claude-desktop-config",
         default=None,
-        help="Optional Claude Desktop config JSON path forwarded to install.py",
+        help="Optional Claude Desktop config JSON path forwarded to install.py.",
     )
     parser.add_argument(
         "installer_args",
         nargs=argparse.REMAINDER,
-        help="Arguments passed through to install.py (prefix with --).",
+        help="Extra arguments passed directly to install.py (prefix with --).",
     )
     args = parser.parse_args()
+
+    # Backwards compat: --server-script → --server-path
+    if args.server_script and not args.server_path:
+        args.server_path = args.server_script
 
     _print("\nRoblox Studio MCP Bridge — Auto-Updater Wizard")
     _print("------------------------------------------------")
@@ -95,20 +128,26 @@ def main() -> int:
         _print(f"Downloading installer from: {url}")
         _download(url, script_path)
 
+        # Build the command to forward to install.py
         cmd = [sys.executable, str(script_path)]
+
+        # Pass-through args (strip leading "--" sentinel if present)
         pass_through = list(args.installer_args or [])
         if pass_through and pass_through[0] == "--":
             pass_through = pass_through[1:]
 
-        if args.server_script and "--server-script" not in pass_through:
-            cmd.extend(["--server-script", args.server_script])
+        # Inject our top-level flags only if they weren't already supplied in
+        # the pass-through block, to avoid duplicates.
+        if args.server_path and "--server-path" not in pass_through and "--server-script" not in pass_through:
+            cmd.extend(["--server-path", args.server_path])
         if args.claude_desktop_config and "--claude-desktop-config" not in pass_through:
             cmd.extend(["--claude-desktop-config", args.claude_desktop_config])
 
         cmd.extend(pass_through)
 
-        _print("Launching latest installer wizard...\n")
+        _print("Launching latest installer wizard…\n")
         return subprocess.call(cmd)
+
     except (urlerror.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
         _print(f"ERROR: Auto-update failed: {exc}")
         _print("Tip: check network access and verify the repo slug with --repo owner/repo")
