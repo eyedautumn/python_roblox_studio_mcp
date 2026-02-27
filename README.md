@@ -95,6 +95,7 @@ src/plugin/
 │   ├── StudioTools.luau     # Run code, insert model, console output, run mode
 │   ├── TerrainTools.luau    # Terrain fill/replace/read/clear tools
 │   ├── BulkTools.luau       # Bulk create/set/delete operations
+│   ├── AnalyzeTools.luau    # Analyze scripts / other instances.
 │   └── DataModelTools.luau  # Place/workspace/team/lighting metadata tools
 └── Utils/
     ├── Types.luau           # Rich type serialization / deserialization
@@ -120,6 +121,7 @@ src/plugin/
 | Terrain | `roblox_terrain_fill_block`, `roblox_terrain_fill_ball`, `roblox_terrain_fill_cylinder`, `roblox_terrain_replace_material`, `roblox_terrain_read_voxels`, `roblox_terrain_clear_region` |
 | Bulk | `roblox_bulk_create_instances`, `roblox_bulk_set_properties`, `roblox_bulk_delete_instances` |
 | DataModel | `roblox_get_place_info`, `roblox_set_lighting`, `roblox_get_workspace_info`, `roblox_get_team_list`, `roblox_get_lighting_effects` |
+| Analyze | `roblox_analyze_script` |
 
 ## Adding New Tools
 
