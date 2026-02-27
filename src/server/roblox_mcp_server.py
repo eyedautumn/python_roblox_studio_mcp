@@ -280,6 +280,7 @@ def _build_job(name, arguments):
     job_id = f"job_{uuid.uuid4().hex[:12]}"
     tool_to_job = {
         # Instance tools
+        "roblox_analyze_script": "analyze_script",
         "roblox_list_services": "list_services",
         "roblox_get_children": "get_children",
         "roblox_get_descendants": "get_descendants",
@@ -1093,6 +1094,32 @@ def _build_tools():
                 "type": "object",
                 "properties": {"client_id": {"type": "string"}},
             },
+        },
+        {
+            "name": "roblox_analyze_script",
+            "description": (
+                "Statically analyse a Luau script and return categorised diagnostics. "
+                "Does not execute any code — analysis runs entirely inside the plugin. "
+                "\n\nReturns three severity levels:\n"
+                "  error   — high-confidence defects (indexing literal nil/false, assignment "
+                "instead of comparison in 'if' condition, concatenating nil, require(nil), etc.)\n"
+                "  warning — likely bugs needing review (unused locals, possible nil access on "
+                "FindFirstChild/Find* results without a guard, deprecated globals like wait()/spawn()/delay(), "
+                "shadowed locals, unreachable code after return/error/break)\n"
+                "  hint    — style / best-practice nudges (functions > 80 lines, implicit globals)\n"
+                "\nPass noHints=true to suppress hints and receive only errors and warnings.\n"
+                "\nEach diagnostic object has: kind ('error'|'warning'|'hint'), line (1-indexed), message.\n"
+                "\nThe response also includes: scriptName, totalLines, errorCount, warningCount, "
+                "hintCount, totalCount."
+            ),
+            "inputSchema": _ref_schema(
+                extra_props={
+                    "noHints": {
+                        "type": "boolean",
+                        "description": "If true, omit hint-level diagnostics (default false).",
+                    }
+                }
+            ),
         },
         {
             "name": "roblox_get_lighting_effects",
