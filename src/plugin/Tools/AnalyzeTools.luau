@@ -1058,6 +1058,7 @@ local function scanSecurityAndPerformance(lines, blockCommentMap)
 				LocalizationService = true, GuiService = true,
 				HapticService = true, VRService = true,
 				TestService = true, AnalyticsService = true,
+                Debris = true
 			}
 			if not knownServices[serviceName] then
 				-- Check case-insensitive
