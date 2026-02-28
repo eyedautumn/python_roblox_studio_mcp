@@ -17,7 +17,7 @@ The runtime is split into two processes:
    - **macOS:** `install-macos` *(right-click → Open on first run to bypass Gatekeeper)*
    - **Windows:** `install-windows.exe`
 2. Run the installer — it will walk you through plugin placement and MCP server registration for Claude Desktop, Claude Code, OpenAI Codex, or OpenCode.
-   - Advanced: pass `--server-script /absolute/path/to/roblox_mcp_server.py` to force which server script path is used or created.
+   - Advanced: pass `--server-script /absolute/path/to/roblox_mcp_server.py` (or `--server-path`) to choose where scripts are installed; installer now places both `roblox_mcp_server.py` and sibling `roblox_bridge_server.py`.
    - Claude Desktop advanced: pass `--claude-desktop-config /absolute/path/to/claude_desktop_config.json` to use a custom config location.
 3. Open Roblox Studio. The **Roblox MCP** toolbar button will appear.
 4. Enable **HTTP Requests** in *Game Settings → Security* (the plugin will attempt this automatically).
@@ -32,7 +32,7 @@ Use this when you want to always pull the latest installer wizard before setup.
    - **Linux/macOS:** `python3 update.py`
    - **Windows:** `py update.py` (or `python update.py`)
 3. The updater fetches the latest `install.py` from the newest release and launches the full interactive installer so you can pick your preferred setup options.
-   - You can also set `--server-script /absolute/path/to/roblox_mcp_server.py` when running `update.py`.
+   - You can also set `--server-script /absolute/path/to/roblox_mcp_server.py` when running `update.py`; it installs both adapter + bridge scripts in that folder.
 
 You can pass installer flags through the updater too:
 

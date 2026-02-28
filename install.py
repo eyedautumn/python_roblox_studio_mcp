@@ -45,6 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE_ROOT = getattr(sys, "_MEIPASS", HERE)
 SKILL_SRC = os.path.join(BUNDLE_ROOT, "src", "skill")
 SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_mcp_server.py")
+BRIDGE_SERVER_SRC = os.path.join(BUNDLE_ROOT, "src", "server", "roblox_bridge_server.py")
 PROJECT_JSON = os.path.join(BUNDLE_ROOT, "default.project.json")
 PLUGIN_RBXM = os.path.join(BUNDLE_ROOT, "RobloxMcpBridge.rbxm")
 PLUGIN_LUA = os.path.join(BUNDLE_ROOT, "src", "plugin", "init.plugin.luau")
@@ -249,7 +250,7 @@ def _get_latest_release_tag(repo_slug):
     return tag
 
 
-def download_server_script(repo_slug=None):
+def download_server_file(filename, repo_slug=None):
     repo = repo_slug or os.environ.get("ROBLOX_MCP_REPO", DEFAULT_GITHUB_REPO)
     try:
         tag = _get_latest_release_tag(repo)
@@ -257,26 +258,31 @@ def download_server_script(repo_slug=None):
         warn(f"Could not resolve latest release tag for MCP server script ({repo}).")
         info(str(exc))
         return None
-    raw_url = (
-        f"https://raw.githubusercontent.com/{repo}/{tag}/"
-        "src/server/roblox_mcp_server.py"
-    )
-    fd, temp_path = tempfile.mkstemp(prefix="roblox-mcp-server-", suffix=".py")
+    raw_url = f"https://raw.githubusercontent.com/{repo}/{tag}/src/server/{filename}"
+    fd, temp_path = tempfile.mkstemp(prefix=f"roblox-mcp-{filename}-", suffix=".py")
     os.close(fd)
     try:
         req = urlrequest.Request(raw_url, headers={"User-Agent": "roblox-mcp-installer"})
         with urlrequest.urlopen(req, timeout=30) as resp, open(temp_path, "wb") as out:
             shutil.copyfileobj(resp, out)
     except (urlerror.URLError, TimeoutError, OSError) as exc:
-        warn("Failed downloading roblox_mcp_server.py fallback from GitHub.")
+        warn(f"Failed downloading {filename} fallback from GitHub.")
         info(str(exc))
         try:
             os.remove(temp_path)
         except OSError:
             pass
         return None
-    info(f"Downloaded MCP server script from {repo}@{tag}.")
+    info(f"Downloaded {filename} from {repo}@{tag}.")
     return temp_path
+
+
+def download_server_script(repo_slug=None):
+    return download_server_file("roblox_mcp_server.py", repo_slug=repo_slug)
+
+
+def download_bridge_server_script(repo_slug=None):
+    return download_server_file("roblox_bridge_server.py", repo_slug=repo_slug)
 
 
 # ---------------------------------------------------------------------------
@@ -336,45 +342,56 @@ def default_server_install_path():
 
 def install_server_script(dest_path, force=False):
     """
-    Copy / download the MCP server script to dest_path.
-    If the file already exists, asks the user whether to overwrite (or overwrites
-    silently when force=True).
+    Install/update both MCP adapter and bridge daemon scripts.
 
-    Returns the absolute path to the installed script, or None on failure.
+    dest_path controls where roblox_mcp_server.py is placed. The bridge daemon is
+    installed alongside it as roblox_bridge_server.py.
+
+    Returns the absolute path to the installed MCP adapter script, or None on failure.
     """
     dest_path = os.path.abspath(os.path.expanduser(dest_path))
+    adapter_dest = dest_path
+    bridge_dest = os.path.join(os.path.dirname(dest_path), "roblox_bridge_server.py")
 
-    if os.path.isfile(dest_path) and not force:
-        if not ask_yn(f"  '{dest_path}' already exists. Overwrite / update it?", default=True):
+    if os.path.isfile(adapter_dest) and not force:
+        if not ask_yn(f"  '{adapter_dest}' already exists. Overwrite / update it?", default=True):
             warn("Kept existing server script.")
-            ok(f"Using existing MCP server script → {dest_path}")
-            return dest_path
+            if os.path.isfile(bridge_dest):
+                ok(f"Using existing MCP server scripts → {adapter_dest} (+ bridge)")
+                return adapter_dest
+            warn(f"Bridge script is missing at '{bridge_dest}'. Installing bridge script now.")
 
-    # Find the source
-    source = None
-    if os.path.isfile(SERVER_SRC):
-        source = SERVER_SRC
-    else:
-        info("Bundled server script not found — downloading from GitHub…")
-        source = download_server_script()
+    adapter_source = SERVER_SRC if os.path.isfile(SERVER_SRC) else None
+    bridge_source = BRIDGE_SERVER_SRC if os.path.isfile(BRIDGE_SERVER_SRC) else None
 
-    if not source:
+    if not adapter_source:
+        info("Bundled roblox_mcp_server.py not found — downloading from GitHub…")
+        adapter_source = download_server_script()
+    if not bridge_source:
+        info("Bundled roblox_bridge_server.py not found — downloading from GitHub…")
+        bridge_source = download_bridge_server_script()
+
+    if not adapter_source:
         err("Could not obtain roblox_mcp_server.py (bundle missing and download failed).")
         return None
+    if not bridge_source:
+        err("Could not obtain roblox_bridge_server.py (bundle missing and download failed).")
+        return None
 
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    shutil.copy2(source, dest_path)
+    os.makedirs(os.path.dirname(adapter_dest), exist_ok=True)
+    shutil.copy2(adapter_source, adapter_dest)
+    shutil.copy2(bridge_source, bridge_dest)
 
-    # Clean up temp download
-    if source != SERVER_SRC and source.startswith(tempfile.gettempdir() + os.sep):
-        try:
-            os.remove(source)
-        except OSError:
-            pass
+    for source, canonical in ((adapter_source, SERVER_SRC), (bridge_source, BRIDGE_SERVER_SRC)):
+        if source != canonical and source.startswith(tempfile.gettempdir() + os.sep):
+            try:
+                os.remove(source)
+            except OSError:
+                pass
 
-    action = "Updated" if os.path.isfile(dest_path) else "Installed"
-    ok(f"MCP server script {action} → {dest_path}")
-    return dest_path
+    ok(f"MCP adapter script installed / updated → {adapter_dest}")
+    ok(f"Bridge daemon script installed / updated → {bridge_dest}")
+    return adapter_dest
 
 
 # ---------------------------------------------------------------------------
@@ -669,7 +686,7 @@ def main():
         warn("Skipped (--skip-plugin).")
 
     # ── Step 3: Install / update MCP server script ───────────────────────────
-    header("Step 3 / 4 — Install MCP server script")
+    header("Step 3 / 4 — Install MCP server scripts")
     installed_server_path = None
 
     if not args.skip_server:
@@ -695,7 +712,8 @@ def main():
             )
 
             if installed_server_path:
-                info(f"Server script is ready at: {installed_server_path}")
+                info(f"Adapter script is ready at: {installed_server_path}")
+                info(f"Bridge script is ready at: {os.path.join(os.path.dirname(installed_server_path), 'roblox_bridge_server.py')}")
             else:
                 warn("Server script could not be installed. MCP client registration will be skipped.")
         else:
