@@ -137,6 +137,9 @@ class McpServer:
         if name == "studio_get_connection_status":
             return _tool_result(_get_connection_status(self.bridge_url, arguments))
 
+        if name == "studio_list_connections":
+            return _tool_result(_list_connections(self.bridge_url))
+
         client_id = arguments.get("client_id") or DEFAULT_CLIENT_ID
         if not _is_client_connected(self.bridge_url, client_id):
             return _tool_error(
@@ -314,6 +317,17 @@ def _is_client_connected(bridge_url, client_id):
         return False
 
 
+def _list_connections(bridge_url):
+    try:
+        data = _http_json(f"{bridge_url}/clients", timeout=3)
+        clients = data.get("clients")
+        if isinstance(clients, list):
+            return {"clients": clients, "count": len(clients)}
+    except Exception:
+        pass
+    return {"clients": [], "count": 0}
+
+
 # ---------------------------------------------------------------------------
 # Shared schema fragments
 # ---------------------------------------------------------------------------
@@ -358,10 +372,18 @@ def _build_tools():
         # -- Meta ---------------------------------------------------------------
         {
             "name": "studio_get_connection_status",
-            "description": "Check if the Roblox Studio plugin is connected to the bridge.",
+            "description": "Check if a Roblox Studio client_id is connected to the bridge.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"client_id": {"type": "string"}},
+            },
+        },
+        {
+            "name": "studio_list_connections",
+            "description": "List all known Studio client_id values and whether they are currently connected.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
             },
         },
         # -- Instance tools -----------------------------------------------------

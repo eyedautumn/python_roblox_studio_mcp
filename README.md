@@ -132,7 +132,7 @@ src/plugin/
 
 | Category | Tools |
 |---|---|
-| Connection | `studio_get_connection_status` |
+| Connection | `studio_get_connection_status`, `studio_list_connections` |
 | Instance | `roblox_list_services`, `roblox_get_children`, `roblox_get_descendants`, `roblox_get_instance`, `roblox_find_instances`, `roblox_search_by_property`, `roblox_get_tree`, `roblox_create_instance`, `roblox_delete_instance`, `roblox_clone_instance`, `roblox_smart_duplicate`, `roblox_reparent_instance`, `roblox_set_name`, `roblox_select_instance`, `roblox_get_selection` |
 | Properties & Attributes | `roblox_get_properties`, `roblox_get_all_properties`, `roblox_get_class_info`, `roblox_set_properties`, `roblox_get_attributes`, `roblox_set_attributes` |
 | Tags | `roblox_get_tags`, `roblox_add_tag`, `roblox_remove_tag` |
