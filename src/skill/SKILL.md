@@ -447,11 +447,8 @@ Check the plugin's widget log (including the job counter) and Studio Output for 
 ### Resources
 scripts/
  - roblox_mcp_server.py: MCP server + HTTP bridge
- - find_plugin_dir.py: Locate the Roblox Plugins folder under Vinegar/Wine
-- install_plugin.py: Copy the plugin into the Plugins folder
  
 references/
 
 - protocol.md: MCP tools, job format, instance resolution, rich types, and patch operations
-- assets/roblox_mcp_plugin.lua: Studio plugin that polls the bridge
 - rlab.md: RLAB (Roblox Luau AI Benchmark) instructions for exercising tool-based Luau editing
