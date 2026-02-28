@@ -4,6 +4,10 @@
 
 A Roblox Studio plugin that bridges Studio to an external MCP (Model Context Protocol) server over HTTP, enabling AI tools to read and manipulate your game's hierarchy, scripts, properties, and more.
 
+The runtime is split into two processes:
+- `roblox_bridge_server.py`: a single long-lived HTTP daemon on port `28650` that Studio polls.
+- `roblox_mcp_server.py`: a per-agent MCP stdio adapter that forwards tool calls to the bridge.
+
 ## Installation
 
 ### Option A — Installer script (recommended)
@@ -48,8 +52,8 @@ python3 update.py --server-script /opt/roblox-mcp/roblox_mcp_server.py --claude-
    - **Linux (Vinegar/Wine):** `~/.var/app/org.vinegarhq.Vinegar/data/prefixes/studio/drive_c/users/<user>/AppData/Local/Roblox/Plugins/`
 3. Open Roblox Studio. The **Roblox MCP** toolbar button will appear.
 4. Enable **HTTP Requests** in *Game Settings → Security* (the plugin will attempt this automatically).
-5. Start your MCP bridge server on `http://127.0.0.1:28650`.
-6. Click **Start Bridge Polling** in the plugin widget.
+5. Start the bridge daemon once: `python3 /path/to/roblox_bridge_server.py` (optional if adapter auto-start is enabled).
+6. Click **Start Bridge Polling** in the plugin widget and confirm the `client_id` text box value (defaults to your `PlaceId`).
 
 ### Option D — Register MCP server manually
 
@@ -70,6 +74,23 @@ If you already have the plugin installed, add this to your AI client's config:
 - **Claude Code:** `claude mcp add Roblox_Studio --scope user -- python3 /path/to/roblox_mcp_server.py`
 - **OpenAI Codex:** `~/.codex/config.toml`
 - **OpenCode:** `~/.config/opencode/mcp.json` (fallback when CLI registration is unavailable)
+
+
+### Bridge startup modes
+
+You can run in either mode:
+
+1. **Auto-start (default)**: each MCP adapter process tries to start the bridge if `http://localhost:28650/status` is unavailable.
+2. **Manual bridge**: run `python3 /path/to/roblox_bridge_server.py` yourself, then launch one or more MCP adapter processes with `python3 /path/to/roblox_mcp_server.py --no-autostart`.
+
+If the bridge is unavailable and auto-start is disabled, the adapter exits with:
+`Bridge not running. Start it with: python roblox_bridge_server.py`.
+
+### Multi-agent usage patterns
+
+- **Multiple Studio places open at once**: each Studio window defaults `client_id` to its `PlaceId`. Use `studio_get_connection_status` / `GET /clients` to discover active clients, then pass `client_id` in tool calls to target a specific place.
+- **Multiple agents → one place**: point all agents at the same `client_id` (typically the place id). Jobs serialize through the shared bridge queue.
+- **Custom grouping**: type any string in the plugin `Client ID` box (for example `map-editor` or `scripting`) to route jobs to that logical Studio target.
 
 ## Building locally (Rojo)
 
@@ -111,7 +132,7 @@ src/plugin/
 
 | Category | Tools |
 |---|---|
-| Connection | `studio_get_connection_status` |
+| Connection | `studio_get_connection_status`, `studio_list_connections` |
 | Instance | `roblox_list_services`, `roblox_get_children`, `roblox_get_descendants`, `roblox_get_instance`, `roblox_find_instances`, `roblox_search_by_property`, `roblox_get_tree`, `roblox_create_instance`, `roblox_delete_instance`, `roblox_clone_instance`, `roblox_smart_duplicate`, `roblox_reparent_instance`, `roblox_set_name`, `roblox_select_instance`, `roblox_get_selection` |
 | Properties & Attributes | `roblox_get_properties`, `roblox_get_all_properties`, `roblox_get_class_info`, `roblox_set_properties`, `roblox_get_attributes`, `roblox_set_attributes` |
 | Tags | `roblox_get_tags`, `roblox_add_tag`, `roblox_remove_tag` |

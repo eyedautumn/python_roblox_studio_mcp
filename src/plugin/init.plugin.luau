@@ -20,7 +20,8 @@ local AnalyzeTools = require(script.Parent.Tools.AnalyzeTools)
 local BuildTools = require(script.Parent.Tools.BuildTools)
 
 local BRIDGE_URL         = "http://127.0.0.1:28650"
-local CLIENT_ID          = "studio"
+local defaultClientId     = tostring(game.PlaceId)
+local currentClientId     = defaultClientId
 local POLL_DELAY         = 0.05
 local ERROR_DELAY        = 2
 local RESULT_RETRY_MAX   = 3
@@ -71,12 +72,34 @@ jobCountLabel.Text                   = "Jobs completed: 0"
 jobCountLabel.LayoutOrder            = 2
 jobCountLabel.Parent                 = widget
 
+local clientIdLabel = Instance.new("TextLabel")
+clientIdLabel.Size                   = UDim2.new(1, 0, 0, 18)
+clientIdLabel.BackgroundTransparency = 1
+clientIdLabel.TextXAlignment         = Enum.TextXAlignment.Left
+clientIdLabel.Font                   = Enum.Font.SourceSans
+clientIdLabel.TextSize               = 12
+clientIdLabel.TextColor3             = Color3.fromRGB(180, 180, 180)
+clientIdLabel.Text                   = "Client ID"
+clientIdLabel.LayoutOrder            = 3
+clientIdLabel.Parent                 = widget
+
+local clientIdBox = Instance.new("TextBox")
+clientIdBox.Size                   = UDim2.new(1, 0, 0, 24)
+clientIdBox.Font                   = Enum.Font.SourceSans
+clientIdBox.TextSize               = 14
+clientIdBox.PlaceholderText        = "Enter client id"
+clientIdBox.Text                   = defaultClientId
+clientIdBox.ClearTextOnFocus       = false
+clientIdBox.TextXAlignment         = Enum.TextXAlignment.Left
+clientIdBox.LayoutOrder            = 4
+clientIdBox.Parent                 = widget
+
 local startButton = Instance.new("TextButton")
 startButton.Size        = UDim2.new(1, 0, 0, 28)
 startButton.Text        = "Start Bridge Polling"
 startButton.Font        = Enum.Font.SourceSans
 startButton.TextSize    = 14
-startButton.LayoutOrder = 3
+startButton.LayoutOrder = 5
 startButton.Parent      = widget
 
 local stopButton = Instance.new("TextButton")
@@ -84,17 +107,17 @@ stopButton.Size        = UDim2.new(1, 0, 0, 28)
 stopButton.Text        = "Stop Bridge Polling"
 stopButton.Font        = Enum.Font.SourceSans
 stopButton.TextSize    = 14
-stopButton.LayoutOrder = 4
+stopButton.LayoutOrder = 6
 stopButton.Parent      = widget
 
 local logFrame = Instance.new("ScrollingFrame")
-logFrame.Size                = UDim2.new(1, 0, 1, -120)
+logFrame.Size                = UDim2.new(1, 0, 1, -170)
 logFrame.BackgroundColor3    = Color3.fromRGB(30, 30, 30)
 logFrame.BorderSizePixel     = 1
 logFrame.ScrollBarThickness  = 6
 logFrame.CanvasSize          = UDim2.new(0, 0, 0, 0)
 logFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-logFrame.LayoutOrder         = 5
+logFrame.LayoutOrder         = 7
 logFrame.Parent              = widget
 
 local logLayout = Instance.new("UIListLayout")
@@ -244,7 +267,7 @@ local function pollLoop()
 
 	while running do
 		local ok, resp = pcall(function()
-			return request("GET", BRIDGE_URL .. "/poll?client_id=" .. CLIENT_ID)
+			return request("GET", BRIDGE_URL .. "/poll?client_id=" .. HttpService:UrlEncode(currentClientId))
 		end)
 
 		if ok and resp and resp.Success then
@@ -296,7 +319,7 @@ local function startPolling()
 	running   = true
 	connected = false
 	updateStatus("Status: starting...")
-	log("Starting → " .. BRIDGE_URL)
+	log("Starting → " .. BRIDGE_URL .. " (client_id=" .. currentClientId .. ")")
 	task.spawn(pollLoop)
 end
 
@@ -306,7 +329,20 @@ local function stopPolling()
 	log("Polling stopped")
 end
 
+clientIdBox.FocusLost:Connect(function(enterPressed)
+	local text = clientIdBox.Text
+	if text == nil or text == "" then
+		currentClientId = defaultClientId
+		clientIdBox.Text = currentClientId
+	else
+		currentClientId = text
+	end
+	if enterPressed then
+		log("Client ID set to: " .. currentClientId)
+	end
+end)
+
 startButton.MouseButton1Click:Connect(startPolling)
 stopButton.MouseButton1Click:Connect(stopPolling)
 
-log("MCP Bridge plugin v0.6 loaded. Press 'Start Bridge Polling' to begin.")
+log("MCP Bridge plugin v0.8 loaded. Default client_id=" .. defaultClientId .. ". Press 'Start Bridge Polling' to begin.")
