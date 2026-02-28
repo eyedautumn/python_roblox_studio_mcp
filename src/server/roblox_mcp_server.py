@@ -1,180 +1,78 @@
 #!/usr/bin/env python3
-"""
-Roblox Studio MCP Bridge Server v0.6
-- Rich type support (Color3, Vector3, CFrame, etc.)
-- ScriptEditorService integration (open/close/list scripts)
-- ChangeHistoryService integration (undo/redo/waypoints)
-- ThreadingHTTPServer for concurrent requests
-- Short server-side poll timeout
-- UUID-based job IDs
-- NEW v0.6: Bulk tools (bulk_create_instances, bulk_set_properties, bulk_delete_instances,
-             find_and_replace_in_scripts)
-"""
+"""Roblox Studio MCP adapter (stdio) that forwards tool jobs to the bridge daemon."""
 import argparse
 import json
+import os
+import subprocess
 import sys
-import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+from urllib import parse, request
 
 DEFAULT_CLIENT_ID = "studio"
 DEFAULT_HTTP_PORT = 28650
-DEFAULT_HTTP_BIND = ""
-DEFAULT_POLL_TIMEOUT_SEC = 5
 DEFAULT_JOB_TIMEOUT_SEC = 30
+DEFAULT_BRIDGE_URL = f"http://localhost:{DEFAULT_HTTP_PORT}"
+PID_FILE = Path.home() / ".roblox-mcp-bridge.pid"
 
 
-def _json_response(handler, status, payload):
-    data = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(data)))
-    handler.end_headers()
-    handler.wfile.write(data)
+def _http_json(url, method="GET", payload=None, timeout=5):
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=headers, method=method)
+    with request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
-class JobQueue:
-    """Thread-safe job queue with per-client pending lists and result storage."""
-
-    def __init__(self):
-        self._pending: dict[str, list[dict]] = {}
-        self._results: dict[str, dict] = {}
-        self._last_seen: dict[str, float] = {}
-        self._cv = threading.Condition()
-
-    def mark_seen(self, client_id: str):
-        with self._cv:
-            self._last_seen[client_id] = time.time()
-            self._cv.notify_all()
-
-    def get_last_seen(self, client_id: str):
-        with self._cv:
-            return self._last_seen.get(client_id)
-
-    def is_connected(self, client_id: str, max_age: float = 15.0) -> bool:
-        with self._cv:
-            last = self._last_seen.get(client_id)
-            if last is None:
-                return False
-            return (time.time() - last) < max_age
-
-    def enqueue(self, client_id: str, job: dict):
-        with self._cv:
-            self._pending.setdefault(client_id, []).append(job)
-            self._cv.notify_all()
-
-    def wait_for_job(self, client_id: str, timeout_sec: float):
-        deadline = time.time() + timeout_sec
-        with self._cv:
-            while True:
-                queue = self._pending.get(client_id)
-                if queue:
-                    return queue.pop(0)
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    return None
-                self._cv.wait(timeout=remaining)
-
-    def store_result(self, job_id: str, result: dict):
-        with self._cv:
-            self._results[job_id] = result
-            self._cv.notify_all()
-
-    def wait_for_result(self, job_id: str, timeout_sec: float):
-        deadline = time.time() + timeout_sec
-        with self._cv:
-            while True:
-                if job_id in self._results:
-                    return self._results.pop(job_id)
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    return None
-                self._cv.wait(timeout=remaining)
-
-    def cancel_job(self, job_id: str):
-        with self._cv:
-            for client_id, queue in self._pending.items():
-                for i, job in enumerate(queue):
-                    if job.get("job_id") == job_id:
-                        queue.pop(i)
-                        return True
-            return False
+def _is_pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
-class RobloxBridgeHttpHandler(BaseHTTPRequestHandler):
-    server_version = "RobloxMcpBridge/0.6"
+def _bridge_is_running(bridge_url: str) -> bool:
+    try:
+        data = _http_json(f"{bridge_url}/status", timeout=1)
+        return bool(data.get("ok"))
+    except Exception:
+        return False
 
-    def do_GET(self):
-        parsed = urlparse(self.path)
 
-        if parsed.path == "/poll":
-            qs = parse_qs(parsed.query or "")
-            client_id = (qs.get("client_id") or [DEFAULT_CLIENT_ID])[0]
-            self.server.job_queue.mark_seen(client_id)
-            job = self.server.job_queue.wait_for_job(
-                client_id, self.server.poll_timeout_sec
-            )
-            _json_response(self, 200, {"ok": True, "job": job})
-            return
+def _autostart_bridge(bridge_url: str) -> bool:
+    bridge_script = Path(__file__).with_name("roblox_bridge_server.py")
+    if not bridge_script.exists():
+        return False
 
-        if parsed.path == "/ping":
-            qs = parse_qs(parsed.query or "")
-            client_id = (qs.get("client_id") or [DEFAULT_CLIENT_ID])[0]
-            self.server.job_queue.mark_seen(client_id)
-            _json_response(self, 200, {"ok": True, "server_time": time.time()})
-            return
-
-        if parsed.path == "/health":
-            _json_response(self, 200, {"ok": True, "uptime": time.time()})
-            return
-
-        _json_response(self, 404, {"ok": False, "error": "not_found"})
-
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path != "/result":
-            _json_response(self, 404, {"ok": False, "error": "not_found"})
-            return
-
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        raw = self.rfile.read(length) if length else b"{}"
+    if PID_FILE.exists():
         try:
-            payload = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
-            _json_response(self, 400, {"ok": False, "error": "invalid_json"})
-            return
+            pid = int(PID_FILE.read_text(encoding="utf-8").strip())
+            if _is_pid_running(pid) and _bridge_is_running(bridge_url):
+                return True
+        except Exception:
+            pass
 
-        job_id = payload.get("job_id")
-        if not job_id:
-            _json_response(self, 400, {"ok": False, "error": "missing_job_id"})
-            return
-
-        self.server.job_queue.store_result(job_id, payload)
-        _json_response(self, 200, {"ok": True})
-
-    def log_message(self, fmt, *args):
-        if not self.server.quiet:
-            super().log_message(fmt, *args)
-
-
-class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
-
-
-class RobloxBridgeHttpServer(ThreadingHTTPServer):
-    def __init__(self, addr, handler, job_queue, poll_timeout_sec, quiet):
-        super().__init__(addr, handler)
-        self.job_queue = job_queue
-        self.poll_timeout_sec = poll_timeout_sec
-        self.quiet = quiet
+    subprocess.Popen(
+        [sys.executable, str(bridge_script)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    for _ in range(30):
+        time.sleep(0.1)
+        if _bridge_is_running(bridge_url):
+            return True
+    return False
 
 
 class McpServer:
-    def __init__(self, job_queue: JobQueue, job_timeout_sec: int):
-        self.job_queue = job_queue
+    def __init__(self, bridge_url: str, job_timeout_sec: int):
+        self.bridge_url = bridge_url.rstrip("/")
         self.job_timeout_sec = job_timeout_sec
 
     def run(self):
@@ -237,10 +135,13 @@ class McpServer:
 
     def _call_tool(self, name, arguments):
         if name == "studio_get_connection_status":
-            return _tool_result(_get_connection_status(self.job_queue, arguments))
+            return _tool_result(_get_connection_status(self.bridge_url, arguments))
+
+        if name == "studio_list_connections":
+            return _tool_result(_list_connections(self.bridge_url))
 
         client_id = arguments.get("client_id") or DEFAULT_CLIENT_ID
-        if not self.job_queue.is_connected(client_id):
+        if not _is_client_connected(self.bridge_url, client_id):
             return _tool_error(
                 "Studio is not connected. Make sure the Roblox Studio plugin "
                 "is installed and 'Start Bridge Polling' has been clicked."
@@ -250,21 +151,42 @@ class McpServer:
         if job is None:
             return _tool_error(f"Unknown tool: {name}")
 
-        job_id = job["job_id"]
-        self.job_queue.enqueue(client_id, job)
-        result = self.job_queue.wait_for_result(job_id, self.job_timeout_sec)
-
-        if result is None:
-            self.job_queue.cancel_job(job_id)
+        try:
+            result = self._call_studio(job["type"], job["args"], client_id)
+        except TimeoutError:
             return _tool_error(
                 "Timed out waiting for Studio to respond. "
                 "Check that the plugin is running and connected."
             )
+        except Exception as exc:
+            return _tool_error(f"Bridge request failed: {exc}")
 
         if not result.get("ok", False):
             return _tool_error(result.get("error") or "Studio error")
 
         return _tool_result(result.get("result"))
+
+    def _call_studio(self, action: str, params: dict, client_id: str = DEFAULT_CLIENT_ID):
+        job_id = str(uuid.uuid4())
+        _http_json(
+            f"{self.bridge_url}/job",
+            method="POST",
+            payload={
+                "job_id": job_id,
+                "client_id": client_id,
+                "action": action,
+                "params": params,
+            },
+            timeout=5,
+        )
+
+        deadline = time.time() + self.job_timeout_sec
+        while time.time() < deadline:
+            data = _http_json(f"{self.bridge_url}/result/{job_id}", timeout=5)
+            if data.get("ready"):
+                return data["result"]
+            time.sleep(0.2)
+        raise TimeoutError(f"Studio did not respond within {self.job_timeout_sec}s")
 
 
 def _tool_result(payload):
@@ -370,17 +292,40 @@ def _build_job(name, arguments):
     }
 
 
-def _get_connection_status(job_queue, arguments):
+def _get_connection_status(bridge_url, arguments):
     client_id = arguments.get("client_id") or DEFAULT_CLIENT_ID
-    last_seen = job_queue.get_last_seen(client_id)
-    if last_seen is None:
-        return {"connected": False, "client_id": client_id}
-    age = time.time() - last_seen
-    return {
-        "connected": age < 15,
-        "client_id": client_id,
-        "last_seen_seconds": round(age, 1),
-    }
+    try:
+        query = parse.urlencode({"client_id": client_id})
+        data = _http_json(f"{bridge_url}/status?{query}", timeout=3)
+        if data.get("connected") is not None:
+            return {
+                "connected": bool(data.get("connected")),
+                "client_id": client_id,
+                "last_seen_seconds": data.get("last_seen_seconds"),
+            }
+    except Exception:
+        pass
+    return {"connected": False, "client_id": client_id}
+
+
+def _is_client_connected(bridge_url, client_id):
+    try:
+        query = parse.urlencode({"client_id": client_id})
+        data = _http_json(f"{bridge_url}/status?{query}", timeout=3)
+        return bool(data.get("connected"))
+    except Exception:
+        return False
+
+
+def _list_connections(bridge_url):
+    try:
+        data = _http_json(f"{bridge_url}/clients", timeout=3)
+        clients = data.get("clients")
+        if isinstance(clients, list):
+            return {"clients": clients, "count": len(clients)}
+    except Exception:
+        pass
+    return {"clients": [], "count": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -427,10 +372,18 @@ def _build_tools():
         # -- Meta ---------------------------------------------------------------
         {
             "name": "studio_get_connection_status",
-            "description": "Check if the Roblox Studio plugin is connected to the bridge.",
+            "description": "Check if a Roblox Studio client_id is connected to the bridge.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"client_id": {"type": "string"}},
+            },
+        },
+        {
+            "name": "studio_list_connections",
+            "description": "List all known Studio client_id values and whether they are currently connected.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
             },
         },
         # -- Instance tools -----------------------------------------------------
@@ -1238,38 +1191,39 @@ def _build_tools():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Roblox Studio MCP bridge")
-    parser.add_argument("--http-bind", default=DEFAULT_HTTP_BIND)
-    parser.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT)
-    parser.add_argument("--poll-timeout", type=int, default=DEFAULT_POLL_TIMEOUT_SEC)
+    parser = argparse.ArgumentParser(description="Roblox Studio MCP adapter v0.8")
+    parser.add_argument("--bridge-url", default=DEFAULT_BRIDGE_URL)
     parser.add_argument("--job-timeout", type=int, default=DEFAULT_JOB_TIMEOUT_SEC)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--no-autostart",
+        action="store_true",
+        help="Don't auto-start the bridge daemon",
+    )
     args = parser.parse_args()
 
-    job_queue = JobQueue()
+    if not _bridge_is_running(args.bridge_url):
+        if args.no_autostart:
+            print(
+                "[MCP Adapter] Bridge not running. Start it with: python roblox_bridge_server.py",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not args.quiet:
+            print("[MCP Adapter] Bridge not running — starting it...", file=sys.stderr)
+        if not _autostart_bridge(args.bridge_url):
+            print(
+                "[MCP Adapter] Failed to start bridge. Run manually: python roblox_bridge_server.py",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not args.quiet:
+            print("[MCP Adapter] Bridge started.", file=sys.stderr)
 
-    bind_display = args.http_bind or "0.0.0.0"
-    print(
-        f"[MCP Bridge] HTTP server listening on {bind_display}:{args.http_port}",
-        file=sys.stderr,
-    )
-    print(
-        f"[MCP Bridge] Poll timeout: {args.poll_timeout}s, Job timeout: {args.job_timeout}s",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        print(f"[MCP Adapter v0.8] Connected to bridge at {args.bridge_url}", file=sys.stderr)
 
-    http_server = RobloxBridgeHttpServer(
-        (args.http_bind, args.http_port),
-        RobloxBridgeHttpHandler,
-        job_queue,
-        args.poll_timeout,
-        args.quiet,
-    )
-
-    thread = threading.Thread(target=http_server.serve_forever, daemon=True)
-    thread.start()
-
-    mcp = McpServer(job_queue, args.job_timeout)
+    mcp = McpServer(bridge_url=args.bridge_url, job_timeout_sec=args.job_timeout)
     try:
         mcp.run()
     except KeyboardInterrupt:
