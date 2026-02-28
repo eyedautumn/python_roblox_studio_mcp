@@ -51,6 +51,39 @@ function PropertyTools.get_all_properties(args)
 	}
 end
 
+
+function PropertyTools.get_class_info(args)
+	local className = args.className
+	if not className or className == "" then
+		return nil, "Missing className"
+	end
+
+	local allCapabilities = SecurityCapabilities.new(table.unpack(Enum.SecurityCapability:GetEnumItems()))
+	local filter = { Security = allCapabilities, ExcludeInherited = false, ExcludeDisplay = false }
+	local reflected = ReflectionService:GetPropertiesOfClass(className, filter)
+	if not reflected then return nil, "Unknown class: " .. tostring(className) end
+
+	local properties = {}
+	for _, prop in ipairs(reflected) do
+		local deprecated = prop.Display and prop.Display.DeprecationMessage and prop.Display.DeprecationMessage ~= ""
+		table.insert(properties, {
+			name = prop.Name,
+			type = tostring(prop.ValueType),
+			deprecated = deprecated == true,
+		})
+	end
+
+	table.sort(properties, function(a, b)
+		return a.name < b.name
+	end)
+
+	return {
+		className = className,
+		propertyCount = #properties,
+		properties = properties,
+	}
+end
+
 function PropertyTools.set_properties(args)
 	local inst = Instances.resolveInstance(args)
 	if not inst then return nil, "Instance not found" end
