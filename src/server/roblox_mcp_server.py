@@ -286,9 +286,11 @@ def _build_job(name, arguments):
         "roblox_get_descendants": "get_descendants",
         "roblox_get_instance": "get_instance",
         "roblox_find_instances": "find_instances",
+        "roblox_search_by_property": "search_by_property",
         "roblox_create_instance": "create_instance",
         "roblox_delete_instance": "delete_instance",
         "roblox_clone_instance": "clone_instance",
+        "roblox_smart_duplicate": "smart_duplicate",
         "roblox_reparent_instance": "reparent_instance",
         "roblox_set_name": "set_name",
         "roblox_select_instance": "select_instance",
@@ -298,6 +300,7 @@ def _build_job(name, arguments):
         "roblox_set_attributes": "set_attributes",
         "roblox_get_properties": "get_properties",
         "roblox_set_properties": "set_properties",
+        "roblox_get_class_info": "get_class_info",
         # Tag tools
         "roblox_get_tags": "get_tags",
         "roblox_add_tag": "add_tag",
@@ -324,6 +327,7 @@ def _build_job(name, arguments):
         "roblox_run_code": "run_code",
         "roblox_insert_model": "insert_model",
         "roblox_get_console_output": "get_console_output",
+        "roblox_get_playtest_output": "get_playtest_output",
         "roblox_start_stop_play": "start_stop_play",
         "roblox_run_script_in_play_mode": "run_script_in_play_mode",
         "roblox_get_studio_mode": "get_studio_mode",
@@ -338,6 +342,7 @@ def _build_job(name, arguments):
         "roblox_bulk_create_instances":        "bulk_create_instances",
         "roblox_bulk_set_properties":          "bulk_set_properties",
         "roblox_bulk_delete_instances":        "bulk_delete_instances",
+        "roblox_bulk_get_properties":          "bulk_get_properties",
         "roblox_find_and_replace_in_scripts":  "find_and_replace_in_scripts",
         # ── NEW v0.6: DataModel tools ──────────────────────────────────────
         "roblox_get_place_info":       "get_place_info",
@@ -345,6 +350,8 @@ def _build_job(name, arguments):
         "roblox_get_workspace_info":   "get_workspace_info",
         "roblox_get_team_list":        "get_team_list",
         "roblox_get_lighting_effects": "get_lighting_effects",
+        "roblox_export_build":         "export_build",
+        "roblox_import_build":         "import_build",
     }
 
     if name not in tool_to_job:
@@ -465,6 +472,23 @@ def _build_tools():
                 },
             },
         },
+
+        {
+            "name": "roblox_search_by_property",
+            "description": "Find instances under an ancestor where a specific property equals a given value.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "propertyName": {"type": "string"},
+                    "propertyValue": {"description": "Property value to compare (supports rich _type values)."},
+                    "className": {"type": "string"},
+                    "ancestorPath": {"type": "string"},
+                    "ancestorPathArray": {"type": "array", "items": {"type": "string"}},
+                    "client_id": {"type": "string"},
+                },
+                "required": ["propertyName", "propertyValue"],
+            },
+        },
         {
             "name": "roblox_get_tree",
             "description": (
@@ -511,6 +535,20 @@ def _build_tools():
                     "newParentPathArray": {"type": "array", "items": {"type": "string"}},
                     "newName": {"type": "string", "description": "Rename the clone."},
                 }
+            ),
+        },
+
+        {
+            "name": "roblox_smart_duplicate",
+            "description": "Clone an instance multiple times and optionally apply a per-clone Vector3 offset.",
+            "inputSchema": _ref_schema(
+                extra_props={
+                    "count": {"type": "integer"},
+                    "offset": {"type": "object", "description": '{"_type":"Vector3","x":5,"y":0,"z":0}'},
+                    "newParentPath": {"type": "string"},
+                    "newParentPathArray": {"type": "array", "items": {"type": "string"}},
+                },
+                required=["count"],
             ),
         },
         {
@@ -748,6 +786,19 @@ def _build_tools():
                 },
             },
         },
+
+        {
+            "name": "roblox_get_playtest_output",
+            "description": "Read buffered playtest/run output logs separately from general Studio logs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "since": {"type": "number"},
+                    "maxEntries": {"type": "integer"},
+                    "client_id": {"type": "string"},
+                },
+            },
+        },
         {
             "name": "roblox_start_stop_play",
             "description": "Switch Studio between Edit, Play, Run, or Test modes.",
@@ -822,6 +873,19 @@ def _build_tools():
                     "name": {"type": "string"},
                     "client_id": {"type": "string"},
                 },
+            },
+        },
+
+        {
+            "name": "roblox_get_class_info",
+            "description": "Read class property metadata from ReflectionService by class name.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "className": {"type": "string"},
+                    "client_id": {"type": "string"},
+                },
+                "required": ["className"],
             },
         },
         {
@@ -1018,6 +1082,23 @@ def _build_tools():
                 "required": ["instances"],
             },
         },
+
+        {
+            "name": "roblox_bulk_get_properties",
+            "description": "Read a single property from many instances in one round-trip.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instances": {
+                        "type": "array",
+                        "items": _ref_schema(),
+                    },
+                    "property": {"type": "string"},
+                    "client_id": {"type": "string"},
+                },
+                "required": ["instances", "property"],
+            },
+        },
         {
             "name": "roblox_find_and_replace_in_scripts",
             "description": (
@@ -1093,6 +1174,27 @@ def _build_tools():
             "inputSchema": {
                 "type": "object",
                 "properties": {"client_id": {"type": "string"}},
+            },
+        },
+
+        {
+            "name": "roblox_export_build",
+            "description": "Serialize an instance subtree into JSON including class, name, properties, and children.",
+            "inputSchema": _ref_schema(),
+        },
+        {
+            "name": "roblox_import_build",
+            "description": "Recreate an instance hierarchy from exported JSON under a parent in one undo waypoint.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "json": {"type": "string"},
+                    "buildJson": {"type": "string"},
+                    "parentPath": {"type": "string"},
+                    "parentPathArray": {"type": "array", "items": {"type": "string"}},
+                    "parentId": {"type": "string"},
+                    "client_id": {"type": "string"},
+                },
             },
         },
         {

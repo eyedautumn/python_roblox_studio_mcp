@@ -216,6 +216,17 @@ Search descendants of an ancestor by `name`, `className`, and/or CollectionServi
 | `tag` | string | Must have this tag |
 | `ancestorPath` / `ancestorPathArray` | string / string[] | Search root (default: `game`) |
 
+#### `roblox_search_by_property`
+
+Find instances under an ancestor where one property equals a target value.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `propertyName` | string | ✓ | Property to read on each instance |
+| `propertyValue` | any | ✓ | Value to compare against (supports rich `_type` values) |
+| `className` | string | | Optional class filter before comparison |
+| `ancestorPath` / `ancestorPathArray` | string / string[] | | Search root (default: `game`) |
+
 #### `roblox_get_tree`
 
 Get a compact recursive tree view. Efficient way to understand hierarchy without multiple calls.
@@ -263,6 +274,17 @@ Clone an instance (and its descendants). Optionally reparent and rename the clon
 | `path` / `pathArray` / `id` | | Instance to clone |
 | `newParentPath` / `newParentPathArray` | string / string[] | Parent for the clone (default: same parent) |
 | `newName` | string | Rename the clone |
+
+#### `roblox_smart_duplicate`
+
+Clone one instance **N times** in a single undo recording, with optional per-clone offset and optional new parent.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `path` / `pathArray` / `id` | | | Instance to duplicate |
+| `count` | integer | ✓ | Number of clones to create |
+| `offset` | object (`Vector3`) | | Per-clone positional offset, e.g. `{ "_type":"Vector3", "x":5, "y":0, "z":0 }` |
+| `newParentPath` / `newParentPathArray` | string / string[] | | Parent for all clones (default: same parent) |
 
 #### `roblox_reparent_instance`
 
@@ -318,6 +340,25 @@ Read specific built-in properties from an instance. Returns rich type objects wi
 {
   "Size": { "_type": "Vector3", "x": 4, "y": 1, "z": 2 },
   "Anchored": true
+}
+```
+
+#### `roblox_get_class_info`
+
+Query class reflection metadata directly from `ReflectionService:GetPropertiesOfClass(className)` without needing a live instance.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `className` | string | ✓ | Roblox class name (e.g. `Part`, `TextLabel`) |
+
+**Returns:**
+```json
+{
+  "className": "Part",
+  "propertyCount": 42,
+  "properties": [
+    { "name": "Anchored", "type": "boolean", "deprecated": false }
+  ]
 }
 ```
 
@@ -682,6 +723,15 @@ Fetch the buffered Output log. Pass `since` (Unix timestamp) and `maxEntries` to
 | `since` | number | Only return entries with `timestamp >= this value` |
 | `maxEntries` | integer | Limit the number of entries returned (default 400) |
 
+#### `roblox_get_playtest_output`
+
+Fetch logs captured specifically while Play/Run mode is active. This buffer is separate from `roblox_get_console_output`.
+
+| Param | Type | Description |
+|---|---|---|
+| `since` | number | Only return entries with `timestamp >= this value` |
+| `maxEntries` | integer | Limit returned entries (default 400) |
+
 #### `roblox_start_stop_play`
 
 Switch Studio's run mode. `"stop"` maps to Edit, `"start_play"` maps to Play, `"run_server"` maps to Run mode.
@@ -703,6 +753,56 @@ Execute Lua while Studio is in Play or Run mode. Requires `code` and errors if S
 | Param | Type | Required | Description |
 |---|---|---|---|
 | `code` | string | ✓ | Lua source executed while running |
+
+---
+
+### Bulk Tools
+
+#### `roblox_bulk_create_instances`
+
+Create many instances in one round-trip and one undo waypoint.
+
+#### `roblox_bulk_set_properties`
+
+Set properties on many instances in one round-trip and one undo waypoint.
+
+#### `roblox_bulk_delete_instances`
+
+Delete many instances in one round-trip and one undo waypoint.
+
+#### `roblox_bulk_get_properties`
+
+Read one property from many instances in one round-trip.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `instances` | array | ✓ | Array of instance refs (`path`/`pathArray`/`id`) |
+| `property` | string | ✓ | Property name to read from each instance |
+
+**Returns:** array of `{ fullName, value }` entries (with rich type serialization when applicable).
+
+#### `roblox_find_and_replace_in_scripts`
+
+Search all scripts under an ancestor for a string and replace in one call.
+
+### Build Tools
+
+#### `roblox_export_build`
+
+Serialize an instance subtree to JSON, recursively capturing `className`, `name`, serializable `properties`, and `children`.
+
+| Param | Type | Description |
+|---|---|---|
+| `path` / `pathArray` / `id` | string / string[] / string | Root instance to export |
+
+#### `roblox_import_build`
+
+Recreate an exported hierarchy under a target parent in a single undo recording.
+
+| Param | Type | Description |
+|---|---|---|
+| `json` / `buildJson` | string | Exported JSON payload |
+| `parentPath` / `parentPathArray` / `parentId` | string / string[] / string | Parent to import under (default: `Workspace`) |
 
 ---
 

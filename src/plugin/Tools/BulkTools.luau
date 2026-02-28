@@ -146,6 +146,48 @@ function BulkTools.bulk_delete_instances(args)
 	}
 end
 
+
+function BulkTools.bulk_get_properties(args)
+	local specs = args.instances
+	local property = args.property
+	if not specs or #specs == 0 then
+		return nil, "Missing or empty 'instances' array"
+	end
+	if not property or property == "" then
+		return nil, "Missing property"
+	end
+	if #specs > 500 then
+		return nil, "Too many instances in one call (max 500)."
+	end
+
+	local results = {}
+	for i, spec in ipairs(specs) do
+		local inst = Instances.resolveInstance(spec)
+		if inst then
+			local ok, value = pcall(function() return inst[property] end)
+			if ok then
+				table.insert(results, {
+					fullName = inst:GetFullName(),
+					value = Types.serializeValue(value),
+				})
+			else
+				table.insert(results, {
+					fullName = inst:GetFullName(),
+					value = { _type = "error", message = tostring(value) },
+				})
+			end
+		else
+			table.insert(results, {
+				index = i,
+				fullName = nil,
+				value = { _type = "error", message = "Instance not found" },
+			})
+		end
+	end
+
+	return results
+end
+
 -- ---------------------------------------------------------------------------
 -- find_and_replace_in_scripts
 -- Search all scripts under an ancestor for a string and replace it.

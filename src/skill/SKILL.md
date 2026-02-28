@@ -22,7 +22,8 @@ Connect to a running Roblox Studio session through a local MCP server and a Stud
 11. Undo/redo changes and set named waypoints (ChangeHistoryService)
 12. Rich type support for properties: Color3, Vector3, Vector2, CFrame, UDim, UDim2, BrickColor, EnumItem, NumberRange, NumberSequence, ColorSequence, Rect, PhysicalProperties, Ray, Font, Axes, Faces
 13. Execute ad-hoc Lua with `roblox_run_code` or `roblox_run_script_in_play_mode` and get the serialized return value plus any Output log messages.
-14. Control Studio (insert assets, toggle run modes, stream console output) with `roblox_insert_model`, `roblox_start_stop_play`, `roblox_get_console_output`, and `roblox_get_studio_mode`.
+14. Control Studio (insert assets, toggle run modes, stream console output) with `roblox_insert_model`, `roblox_start_stop_play`, `roblox_get_console_output`, `roblox_get_playtest_output`, and `roblox_get_studio_mode`.
+15. Use advanced hierarchy workflows: property-based instance search (`roblox_search_by_property`), reflection metadata (`roblox_get_class_info`), smart duplication (`roblox_smart_duplicate`), bulk property reads (`roblox_bulk_get_properties`), and build export/import (`roblox_export_build`, `roblox_import_build`).
 
 ## Quick Start
 1. Start the MCP bridge server (stdio + HTTP bridge):
@@ -59,6 +60,7 @@ The bridge uses a **threaded HTTP server** so that long-poll requests from the p
 ### Instance navigation
 - Use `roblox_get_tree` for an efficient overview of the hierarchy instead of chaining `get_children` calls. Tune `maxDepth` and `maxChildren` to control size.
 - Use `roblox_find_instances` to locate objects by name, className, or tag, then operate by returned `id`.
+- Use `roblox_search_by_property` when you need value equality matching (e.g. all parts where `Material == Neon`) and optionally restrict with `className`.
 - Use `roblox_get_selection` to see what the user has selected in the Explorer panel.
 - Prefer `pathArray` over `path` for reliable instance targeting.
 
@@ -124,6 +126,7 @@ content: "<new code to insert>"
 
 ### Studio helpers
 - Run lightweight Lua with `roblox_run_code`. Watch the buffered Output log with `roblox_get_console_output` if you need to capture what `print` or `warn` emitted.
+- Use `roblox_get_playtest_output` for logs emitted specifically during Play/Run sessions, independent from the general Studio buffer.
 - Drop a published asset directly into Workspace with `roblox_insert_model`, then inspect the serialized instance to continue working with it.
 - Switch Studio between Play/Run/Edit via `roblox_start_stop_play`, use `roblox_get_studio_mode` to confirm the current mode, and execute gameplay-only snippets through `roblox_run_script_in_play_mode` while run mode is active.
 
@@ -141,11 +144,15 @@ Use roblox_get_script_functions to list all function definitions with line numbe
 Use roblox_search_across_scripts to find where a function, variable, or string is used across the entire codebase.
 Properties, attributes, and tags
 Use roblox_get_properties / roblox_set_properties for built-in properties (now with rich type support).
+Use roblox_get_class_info to inspect a class definition (property names/types/deprecation) without needing a live instance.
 Use roblox_get_attributes / roblox_set_attributes for custom attributes.
 Use roblox_get_tags, roblox_add_tag, roblox_remove_tag for CollectionService tags.
 Creating and duplicating
 Use roblox_create_instance to create new instances with properties set in one call (supports rich types).
 Use roblox_clone_instance to duplicate an existing instance (with optional reparent and rename).
+Use roblox_smart_duplicate for N clones in one undo step with optional per-clone Vector3 offset and optional new parent.
+Use roblox_bulk_get_properties when reading one property across many instances to reduce round-trips.
+Use roblox_export_build / roblox_import_build to snapshot and reconstruct an entire subtree as JSON.
 
 ### Performance Best Practices & Preventing Lag
 

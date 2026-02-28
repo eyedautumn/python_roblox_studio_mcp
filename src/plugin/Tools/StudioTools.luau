@@ -81,22 +81,29 @@ end
 -- Console log buffer
 ---------------------------------------------------------------------------
 local CONSOLE_LOG_LIMIT = 400
+local PLAYTEST_LOG_LIMIT = 400
+local STUDIO_MODE = "stop"
 local consoleLogs = {}
+local playtestLogs = {}
 
 LogService.MessageOut:Connect(function(message, messageType)
-	table.insert(consoleLogs, {
+	local entry = {
 		text      = tostring(message or ""),
 		type      = messageType and tostring(messageType.Name) or "Unknown",
 		timestamp = time(),
-	})
+	}
+	table.insert(consoleLogs, entry)
 	if #consoleLogs > CONSOLE_LOG_LIMIT then table.remove(consoleLogs, 1) end
+
+	if STUDIO_MODE ~= "stop" then
+		table.insert(playtestLogs, entry)
+		if #playtestLogs > PLAYTEST_LOG_LIMIT then table.remove(playtestLogs, 1) end
+	end
 end)
 
 ---------------------------------------------------------------------------
 -- Play mode state
 ---------------------------------------------------------------------------
-local STUDIO_MODE = "stop"
-
 local function currentRunMode() return STUDIO_MODE end
 local function isStudioPlayMode(mode) return (mode or currentRunMode()) == "start_play" end
 
@@ -324,6 +331,7 @@ function StudioTools.run_script_in_play_mode(args)
 
 	-- Clear any stale stop signal before starting
 	PluginUtils.setSettings(MCP_STOP_PLAY_MESSAGE_KEY, false)
+	playtestLogs = {}
 
 	injectTestScript(code, timeout)
 
@@ -406,6 +414,25 @@ function StudioTools.get_console_output(args)
 	}
 end
 
+
+function StudioTools.get_playtest_output(args)
+	local since      = args.since or 0
+	local maxEntries = math.min(args.maxEntries or PLAYTEST_LOG_LIMIT, PLAYTEST_LOG_LIMIT)
+	local result = {}
+	for i = #playtestLogs, 1, -1 do
+		local entry = playtestLogs[i]
+		if entry and entry.timestamp >= since then
+			table.insert(result, 1, entry)
+		end
+		if #result >= maxEntries then break end
+	end
+	return {
+		logs            = result,
+		count           = #result,
+		latestTimestamp = playtestLogs[#playtestLogs] and playtestLogs[#playtestLogs].timestamp,
+	}
+end
+
 function StudioTools.start_stop_play(args)
 	local requested = args.mode or args.action or args.state or args.command or args.name
 	if not requested then
@@ -414,11 +441,13 @@ function StudioTools.start_stop_play(args)
 
 	if requested == "start_play" then
 		STUDIO_MODE = "start_play"
+		playtestLogs = {}
 		task.spawn(function() StudioTestService:ExecutePlayModeAsync({}) end)
 		return { mode = "start_play", message = "Started play" }
 
 	elseif requested == "run_server" then
 		STUDIO_MODE = "run_server"
+		playtestLogs = {}
 		task.spawn(function() StudioTestService:ExecuteRunModeAsync({}) end)
 		return { mode = "run_server", message = "Ran server" }
 

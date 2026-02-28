@@ -17,6 +17,7 @@ local TerrainTools   = require(script.Parent.Tools.TerrainTools)
 local BulkTools      = require(script.Parent.Tools.BulkTools)
 local DataModelTools = require(script.Parent.Tools.DataModelTools)
 local AnalyzeTools = require(script.Parent.Tools.AnalyzeTools)
+local BuildTools = require(script.Parent.Tools.BuildTools)
 
 local BRIDGE_URL         = "http://127.0.0.1:28650"
 local CLIENT_ID          = "studio"
@@ -138,10 +139,12 @@ local handlers = {
 	get_descendants   = InstanceTools.get_descendants,
 	get_instance      = InstanceTools.get_instance,
 	find_instances    = InstanceTools.find_instances,
+	search_by_property = InstanceTools.search_by_property,
 	get_tree          = InstanceTools.get_tree,
 	create_instance   = InstanceTools.create_instance,
 	delete_instance   = InstanceTools.delete_instance,
 	clone_instance    = InstanceTools.clone_instance,
+	smart_duplicate   = InstanceTools.smart_duplicate,
 	reparent_instance = InstanceTools.reparent_instance,
 	set_name          = InstanceTools.set_name,
 	select_instance   = InstanceTools.select_instance,
@@ -149,6 +152,7 @@ local handlers = {
 	-- Properties / Attributes
 	get_properties    = PropertyTools.get_properties,
 	get_all_properties = PropertyTools.get_all_properties,
+	get_class_info    = PropertyTools.get_class_info,
 	set_properties    = PropertyTools.set_properties,
 	get_attributes    = PropertyTools.get_attributes,
 	set_attributes    = PropertyTools.set_attributes,
@@ -176,6 +180,7 @@ local handlers = {
 	run_code                = StudioTools.run_code,
 	insert_model            = StudioTools.insert_model,
 	get_console_output      = StudioTools.get_console_output,
+	get_playtest_output     = StudioTools.get_playtest_output,
 	start_stop_play         = StudioTools.start_stop_play,
 	get_studio_mode         = StudioTools.get_studio_mode,
 	run_script_in_play_mode = StudioTools.run_script_in_play_mode,
@@ -192,7 +197,13 @@ local handlers = {
 	bulk_create_instances       = BulkTools.bulk_create_instances,
 	bulk_set_properties         = BulkTools.bulk_set_properties,
 	bulk_delete_instances       = BulkTools.bulk_delete_instances,
+	bulk_get_properties        = BulkTools.bulk_get_properties,
 	find_and_replace_in_scripts = BulkTools.find_and_replace_in_scripts,
+
+
+	-- ── v0.6: Build ────────────────────────────────────────────────────────
+	export_build = BuildTools.export_build,
+	import_build = BuildTools.import_build,
 
 	-- ── v0.6: DataModel ────────────────────────────────────────────────────
 	get_place_info       = DataModelTools.get_place_info,

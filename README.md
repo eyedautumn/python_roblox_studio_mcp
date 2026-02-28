@@ -94,7 +94,8 @@ src/plugin/
 │   ├── HistoryTools.luau    # Undo/redo/waypoints
 │   ├── StudioTools.luau     # Run code, insert model, console output, run mode
 │   ├── TerrainTools.luau    # Terrain fill/replace/read/clear tools
-│   ├── BulkTools.luau       # Bulk create/set/delete operations
+│   ├── BulkTools.luau       # Bulk create/set/delete/get-property operations
+│   ├── BuildTools.luau      # Export/import instance subtrees as JSON
 │   ├── AnalyzeTools.luau    # Analyze scripts / other instances.
 │   └── DataModelTools.luau  # Place/workspace/team/lighting metadata tools
 └── Utils/
@@ -111,16 +112,17 @@ src/plugin/
 | Category | Tools |
 |---|---|
 | Connection | `studio_get_connection_status` |
-| Instance | `roblox_list_services`, `roblox_get_children`, `roblox_get_descendants`, `roblox_get_instance`, `roblox_find_instances`, `roblox_get_tree`, `roblox_create_instance`, `roblox_delete_instance`, `roblox_clone_instance`, `roblox_reparent_instance`, `roblox_set_name`, `roblox_select_instance`, `roblox_get_selection` |
-| Properties & Attributes | `roblox_get_properties`, `roblox_get_all_properties`, `roblox_set_properties`, `roblox_get_attributes`, `roblox_set_attributes` |
+| Instance | `roblox_list_services`, `roblox_get_children`, `roblox_get_descendants`, `roblox_get_instance`, `roblox_find_instances`, `roblox_search_by_property`, `roblox_get_tree`, `roblox_create_instance`, `roblox_delete_instance`, `roblox_clone_instance`, `roblox_smart_duplicate`, `roblox_reparent_instance`, `roblox_set_name`, `roblox_select_instance`, `roblox_get_selection` |
+| Properties & Attributes | `roblox_get_properties`, `roblox_get_all_properties`, `roblox_get_class_info`, `roblox_set_properties`, `roblox_get_attributes`, `roblox_set_attributes` |
 | Tags | `roblox_get_tags`, `roblox_add_tag`, `roblox_remove_tag` |
 | Scripts | `roblox_read_script`, `roblox_write_script`, `roblox_patch_script`, `roblox_get_script_lines`, `roblox_search_script`, `roblox_get_script_functions`, `roblox_search_across_scripts`, `roblox_find_and_replace_in_scripts` |
 | Editor | `roblox_open_script`, `roblox_get_open_scripts`, `roblox_close_script` |
 | History | `roblox_undo`, `roblox_redo`, `roblox_set_waypoint` |
-| Studio | `roblox_run_code`, `roblox_insert_model`, `roblox_get_console_output`, `roblox_start_stop_play`, `roblox_get_studio_mode`, `roblox_run_script_in_play_mode` |
+| Studio | `roblox_run_code`, `roblox_insert_model`, `roblox_get_console_output`, `roblox_get_playtest_output`, `roblox_start_stop_play`, `roblox_get_studio_mode`, `roblox_run_script_in_play_mode` |
 | Terrain | `roblox_terrain_fill_block`, `roblox_terrain_fill_ball`, `roblox_terrain_fill_cylinder`, `roblox_terrain_replace_material`, `roblox_terrain_read_voxels`, `roblox_terrain_clear_region` |
-| Bulk | `roblox_bulk_create_instances`, `roblox_bulk_set_properties`, `roblox_bulk_delete_instances` |
+| Bulk | `roblox_bulk_create_instances`, `roblox_bulk_set_properties`, `roblox_bulk_delete_instances`, `roblox_bulk_get_properties` |
 | DataModel | `roblox_get_place_info`, `roblox_set_lighting`, `roblox_get_workspace_info`, `roblox_get_team_list`, `roblox_get_lighting_effects` |
+| Build | `roblox_export_build`, `roblox_import_build` |
 | Analyze | `roblox_analyze_script` |
 
 ## Adding New Tools
