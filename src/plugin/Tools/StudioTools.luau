@@ -106,9 +106,9 @@ end)
 -- Play mode state
 ---------------------------------------------------------------------------
 local function currentRunMode()
-	if RunService:IsRunning() then
-		return STUDIO_MODE == "run_server" and "run_server" or "start_play"
-	end
+	if RunService:IsRunMode() then return "run_server" end
+	if RunService:IsRunning() then return "start_play" end
+	if STUDIO_MODE ~= "stop" then return STUDIO_MODE end
 	return "stop"
 end
 local function isStudioPlayMode(mode) return (mode or currentRunMode()) == "start_play" end
@@ -507,7 +507,7 @@ function StudioTools.start_stop_play(args)
 	end
 
 	if requested == "start_play" then
-		if STUDIO_MODE ~= "stop" then
+		if currentRunMode() ~= "stop" then
 			return nil, "Studio is already transitioning or running a play session"
 		end
 		startManualPlaySession("start_play", function()
@@ -516,7 +516,7 @@ function StudioTools.start_stop_play(args)
 		return { mode = "start_play", message = "Started play" }
 
 	elseif requested == "run_server" then
-		if STUDIO_MODE ~= "stop" then
+		if currentRunMode() ~= "stop" then
 			return nil, "Studio is already transitioning or running a play session"
 		end
 		startManualPlaySession("run_server", function()
@@ -528,8 +528,9 @@ function StudioTools.start_stop_play(args)
 		playSessionToken += 1
 		stopPlayViaSignal()
 		pcall(function() StudioTestService:EndTest({}) end)
+		pcall(function() RunService:Stop() end)
 		resetPlayState()
-		return { mode = "stop", message = "Stop signal sent" }
+		return { mode = "stop", message = "Stopped play session" }
 	end
 
 	return nil, "Unknown Studio mode (supported: start_play, stop, run_server)"
