@@ -85,6 +85,7 @@ local PLAYTEST_LOG_LIMIT = 400
 local STUDIO_MODE = "stop"
 local consoleLogs = {}
 local playtestLogs = {}
+local playSessionToken = 0
 
 LogService.MessageOut:Connect(function(message, messageType)
 	local entry = {
@@ -105,9 +106,9 @@ end)
 -- Play mode state
 ---------------------------------------------------------------------------
 local function currentRunMode()
-	if RunService:IsRunning() then
-		return STUDIO_MODE == "run_server" and "run_server" or "start_play"
-	end
+	if RunService:IsRunMode() then return "run_server" end
+	if RunService:IsRunning() then return "start_play" end
+	if STUDIO_MODE ~= "stop" then return STUDIO_MODE end
 	return "stop"
 end
 local function isStudioPlayMode(mode) return (mode or currentRunMode()) == "start_play" end
@@ -347,6 +348,33 @@ local function stopPlayViaSignal()
 	setSessionId(newSessionId())
 end
 
+local function resetPlayState()
+	removeTestScript()
+	removeControlScript()
+	workspace:SetAttribute(MCP_SESSION_ATTRIBUTE, nil)
+	STUDIO_MODE = "stop"
+end
+
+local function startManualPlaySession(mode: string, executeAsync: () -> any)
+	playSessionToken += 1
+	local token = playSessionToken
+
+	local sessionId = newSessionId()
+	setSessionId(sessionId)
+	STUDIO_MODE = mode
+	playtestLogs = {}
+	injectControlScript(sessionId)
+
+	task.spawn(function()
+		local success, err = pcall(executeAsync)
+		if token ~= playSessionToken then return end
+		if not success then
+			warn("[MCP] Failed to start " .. tostring(mode) .. ": " .. tostring(err))
+		end
+		resetPlayState()
+	end)
+end
+
 ---------------------------------------------------------------------------
 -- Public tool functions
 ---------------------------------------------------------------------------
@@ -385,9 +413,7 @@ function StudioTools.run_script_in_play_mode(args)
 	end)
 
 	STUDIO_MODE = "stop"
-	removeTestScript()
-	removeControlScript()
-	workspace:SetAttribute(MCP_SESSION_ATTRIBUTE, nil)
+	resetPlayState()
 
 	if not success then
 		return nil, "Failed to run script in play mode: " .. tostring(result)
@@ -481,30 +507,30 @@ function StudioTools.start_stop_play(args)
 	end
 
 	if requested == "start_play" then
-		local sessionId = newSessionId()
-		setSessionId(sessionId)
-		STUDIO_MODE = "start_play"
-		playtestLogs = {}
-		injectControlScript(sessionId)
-		task.spawn(function() StudioTestService:ExecutePlayModeAsync({}) end)
+		if currentRunMode() ~= "stop" then
+			return nil, "Studio is already transitioning or running a play session"
+		end
+		startManualPlaySession("start_play", function()
+			StudioTestService:ExecutePlayModeAsync({})
+		end)
 		return { mode = "start_play", message = "Started play" }
 
 	elseif requested == "run_server" then
-		local sessionId = newSessionId()
-		setSessionId(sessionId)
-		STUDIO_MODE = "run_server"
-		playtestLogs = {}
-		injectControlScript(sessionId)
-		task.spawn(function() StudioTestService:ExecuteRunModeAsync({}) end)
+		if currentRunMode() ~= "stop" then
+			return nil, "Studio is already transitioning or running a play session"
+		end
+		startManualPlaySession("run_server", function()
+			StudioTestService:ExecuteRunModeAsync({})
+		end)
 		return { mode = "run_server", message = "Ran server" }
 
 	elseif requested == "stop" then
+		playSessionToken += 1
 		stopPlayViaSignal()
 		pcall(function() StudioTestService:EndTest({}) end)
-		removeTestScript()
-		removeControlScript()
-		STUDIO_MODE = "stop"
-		return { mode = "stop", message = "Stop signal sent" }
+		pcall(function() RunService:Stop() end)
+		resetPlayState()
+		return { mode = "stop", message = "Stopped play session" }
 	end
 
 	return nil, "Unknown Studio mode (supported: start_play, stop, run_server)"
