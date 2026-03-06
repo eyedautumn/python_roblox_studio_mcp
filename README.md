@@ -146,6 +146,14 @@ src/plugin/
 | Build | `roblox_export_build`, `roblox_import_build` |
 | Analyze | `roblox_analyze_script` |
 
+## Playtesting Tips
+
+- Use `roblox_run_script_in_play_mode` for one-shot script execution with a timeout and structured return payload.
+- Use `roblox_start_stop_play` for manual sessions (`start_play` / `run_server` / `stop`).
+- Confirm transitions with `roblox_get_studio_mode` before issuing follow-up commands.
+- Stream session logs with `roblox_get_playtest_output`; use `roblox_get_console_output` for global output.
+- If Studio appears stuck in Play after a run, call `roblox_start_stop_play` with `stop`, wait briefly, then re-check mode.
+
 ## Adding New Tools
 
 1. Create (or edit) the appropriate module in `src/plugin/Tools/`.

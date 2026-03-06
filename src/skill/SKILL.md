@@ -130,6 +130,31 @@ content: "<new code to insert>"
 - Drop a published asset directly into Workspace with `roblox_insert_model`, then inspect the serialized instance to continue working with it.
 - Switch Studio between Play/Run/Edit via `roblox_start_stop_play`, use `roblox_get_studio_mode` to confirm the current mode, and execute gameplay-only snippets through `roblox_run_script_in_play_mode` while run mode is active.
 
+### Playtesting Workflows (Start / Stop / Run Script)
+
+Recommended baseline flow for reliable playtests:
+1. Call `roblox_start_stop_play` with `{ "mode": "start_play" }` (or `run_server` if needed).
+2. Immediately verify state with `roblox_get_studio_mode` and proceed only when mode is `start_play` or `run_server`.
+3. Run gameplay-only snippets using `roblox_run_script_in_play_mode` and set an explicit timeout for each run.
+4. Stream logs with `roblox_get_playtest_output` to inspect runtime behavior.
+5. End the session using `roblox_start_stop_play` with `{ "mode": "stop" }` when finished.
+
+When to use each tool:
+- `roblox_run_script_in_play_mode`: best for single-use test scripts that should auto-end and return structured results.
+- `roblox_start_stop_play`: best for manual multi-step test sessions where you run several actions before stopping.
+- `roblox_get_studio_mode`: use as the source of truth before and after transitions.
+
+Playtesting reliability notes:
+- Always include a timeout in `roblox_run_script_in_play_mode` to prevent long-running scripts from hanging tests.
+- If a run appears stuck, call `roblox_start_stop_play` with `stop`, then re-check with `roblox_get_studio_mode` before starting another run.
+- Do not queue multiple play transitions at once; wait for each transition to settle before issuing the next command.
+- If logs look empty, verify you are reading from `roblox_get_playtest_output` (play/run-only buffer) instead of only `roblox_get_console_output` (global output buffer).
+
+Troubleshooting checklist:
+- `stop` says success but Studio keeps running: call `roblox_get_studio_mode`, then issue another `stop` and wait briefly before re-checking.
+- `run_script_in_play_mode` returns timeout: increase timeout and verify the script does not yield forever.
+- Unexpected duplicate behavior after repeated runs: explicitly stop, confirm mode is `stop`, then start a fresh play session.
+
 Script editor management
 Use roblox_open_script to open a script in Studio's editor and jump to a specific line. Useful after finding something with search_script or search_across_scripts.
 Use roblox_get_open_scripts to see what tabs are open in the editor.
