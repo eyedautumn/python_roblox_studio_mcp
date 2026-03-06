@@ -4,16 +4,16 @@
 local HttpService         = game:GetService("HttpService")
 local InsertService       = game:GetService("InsertService")
 local LogService          = game:GetService("LogService")
+local RunService          = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local StudioTestService   = game:GetService("StudioTestService")
 
 local History     = require(script.Parent.Parent.Utils.History)
-local PluginUtils = require(script.Parent.Parent.Utils.PluginUtils)
 
 ---------------------------------------------------------------------------
--- Settings keys
+-- Shared workspace attributes used by in-session stop monitors
 ---------------------------------------------------------------------------
-local MCP_STOP_PLAY_MESSAGE_KEY = "MCP_STOP_PLAY_MESSAGE"
+local MCP_SESSION_ATTRIBUTE = "MCP_PLAY_SESSION_ID"
 
 ---------------------------------------------------------------------------
 -- Insert model helpers
@@ -104,7 +104,12 @@ end)
 ---------------------------------------------------------------------------
 -- Play mode state
 ---------------------------------------------------------------------------
-local function currentRunMode() return STUDIO_MODE end
+local function currentRunMode()
+	if RunService:IsRunning() then
+		return STUDIO_MODE == "run_server" and "run_server" or "start_play"
+	end
+	return "stop"
+end
 local function isStudioPlayMode(mode) return (mode or currentRunMode()) == "start_play" end
 
 ---------------------------------------------------------------------------
@@ -201,14 +206,30 @@ local function runCodeWithOutput(command: string): string
 end
 
 ---------------------------------------------------------------------------
--- run_script_in_play_mode – script injection + settings-key stop signal
+-- run_script_in_play_mode – script injection + in-session stop monitor
 ---------------------------------------------------------------------------
 local TEST_SCRIPT_NAME = "AssistantTestScript"
+local CONTROL_SCRIPT_NAME = "AssistantPlayControlScript"
 
-local function buildTestRunnerSource(userCode: string, timeout: number): string
+local function buildStopMonitorSource(sessionId: string): string
+	return string.format([[
+local StudioTestService = game:GetService("StudioTestService")
+local RunService = game:GetService("RunService")
+if not RunService:IsRunning() then return end
+
+local sessionId = %q
+while true do
+	if workspace:GetAttribute(%q) ~= sessionId then
+		StudioTestService:EndTest({ success = false, error = "Stopped by MCP" })
+		return
+	end
+	task.wait(0.2)
+end
+]], sessionId, MCP_SESSION_ATTRIBUTE)
+end
+
+local function buildTestRunnerSource(userCode: string, timeout: number, sessionId: string): string
 	local timeoutStr = tostring(timeout)
-	-- MCP_STOP_PLAY_SIGNAL_KEY is substituted as a literal string in the source
-	local stopKey = MCP_STOP_PLAY_MESSAGE_KEY
 	return string.format([[
 local StudioTestService = game:GetService("StudioTestService")
 local LogService        = game:GetService("LogService")
@@ -216,18 +237,13 @@ local RunService        = game:GetService("RunService")
 if not RunService:IsRunning() then return end
 
 -- ── Stop-signal monitor ──────────────────────────────────────────────────
--- The plugin (edit-mode) cannot call EndTest directly; it sets a settings
--- key instead. This monitor loop runs inside the play session and calls
--- EndTest when the signal is set.
 task.spawn(function()
 	while true do
-		local stop = plugin:GetSetting(%q)
-		if stop then
-			plugin:SetSetting(%q, false)
-			StudioTestService:EndTest({})
+		if workspace:GetAttribute(%q) ~= %q then
+			StudioTestService:EndTest({ success = false, error = "Stopped by MCP" })
 			return
 		end
-		task.wait(0.5)
+		task.wait(0.2)
 	end
 end)
 
@@ -253,8 +269,11 @@ end)
 
 local startTime = os.clock()
 local isTimeout = false
+local isFinished = false
 
 local function endTest(ok, result)
+	if isFinished then return end
+	isFinished = true
 	local duration = os.clock() - startTime
 	task.wait(0.1)
 	if logConnection then logConnection:Disconnect() end
@@ -287,7 +306,7 @@ local ok, result = pcall(function()
 %s
 end)
 endTest(ok, result)
-]], stopKey, stopKey, timeoutStr, userCode)
+]], MCP_SESSION_ATTRIBUTE, sessionId, timeoutStr, userCode)
 end
 
 local function removeTestScript()
@@ -295,17 +314,37 @@ local function removeTestScript()
 	if s then s:Destroy() end
 end
 
-local function injectTestScript(code: string, timeout: number)
+local function removeControlScript()
+	local s = ServerScriptService:FindFirstChild(CONTROL_SCRIPT_NAME)
+	if s then s:Destroy() end
+end
+
+local function injectTestScript(code: string, timeout: number, sessionId: string)
 	removeTestScript()
 	local s    = Instance.new("Script")
 	s.Name     = TEST_SCRIPT_NAME
-	s.Source   = buildTestRunnerSource(code, timeout)
+	s.Source   = buildTestRunnerSource(code, timeout, sessionId)
 	s.Parent   = ServerScriptService
 end
 
--- Signal the in-session monitor to call EndTest and stop the session.
+local function injectControlScript(sessionId: string)
+	removeControlScript()
+	local s  = Instance.new("Script")
+	s.Name   = CONTROL_SCRIPT_NAME
+	s.Source = buildStopMonitorSource(sessionId)
+	s.Parent = ServerScriptService
+end
+
+local function newSessionId()
+	return HttpService:GenerateGUID(false)
+end
+
+local function setSessionId(id: string)
+	workspace:SetAttribute(MCP_SESSION_ATTRIBUTE, id)
+end
+
 local function stopPlayViaSignal()
-	PluginUtils.setSettings(MCP_STOP_PLAY_MESSAGE_KEY, true)
+	setSessionId(newSessionId())
 end
 
 ---------------------------------------------------------------------------
@@ -329,11 +368,11 @@ function StudioTools.run_script_in_play_mode(args)
 		return nil, "Timeout must be a positive number"
 	end
 
-	-- Clear any stale stop signal before starting
-	PluginUtils.setSettings(MCP_STOP_PLAY_MESSAGE_KEY, false)
+	local sessionId = newSessionId()
+	setSessionId(sessionId)
 	playtestLogs = {}
 
-	injectTestScript(code, timeout)
+	injectTestScript(code, timeout, sessionId)
 
 	local success, result = pcall(function()
 		if args.mode == "run_server" then
@@ -347,6 +386,8 @@ function StudioTools.run_script_in_play_mode(args)
 
 	STUDIO_MODE = "stop"
 	removeTestScript()
+	removeControlScript()
+	workspace:SetAttribute(MCP_SESSION_ATTRIBUTE, nil)
 
 	if not success then
 		return nil, "Failed to run script in play mode: " .. tostring(result)
@@ -440,22 +481,28 @@ function StudioTools.start_stop_play(args)
 	end
 
 	if requested == "start_play" then
+		local sessionId = newSessionId()
+		setSessionId(sessionId)
 		STUDIO_MODE = "start_play"
 		playtestLogs = {}
+		injectControlScript(sessionId)
 		task.spawn(function() StudioTestService:ExecutePlayModeAsync({}) end)
 		return { mode = "start_play", message = "Started play" }
 
 	elseif requested == "run_server" then
+		local sessionId = newSessionId()
+		setSessionId(sessionId)
 		STUDIO_MODE = "run_server"
 		playtestLogs = {}
+		injectControlScript(sessionId)
 		task.spawn(function() StudioTestService:ExecuteRunModeAsync({}) end)
 		return { mode = "run_server", message = "Ran server" }
 
 	elseif requested == "stop" then
-		-- Use the signal approach so EndTest is called from inside the session
 		stopPlayViaSignal()
-		-- Fallback: if no session is running, attempt a direct call anyway
 		pcall(function() StudioTestService:EndTest({}) end)
+		removeTestScript()
+		removeControlScript()
 		STUDIO_MODE = "stop"
 		return { mode = "stop", message = "Stop signal sent" }
 	end
